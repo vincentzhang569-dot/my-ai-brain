@@ -30,7 +30,6 @@
 
 > **场景示例**：上传《ABB 机器人操作手册》，询问“错误代码 503 的解决方案”。
 
-
 ## 🚀 快速开始
 
 ### 1. 环境准备
@@ -40,8 +39,7 @@
 ```bash
 pip install -r requirements.txt
 
-### 3. 运行应用
-```bash
+3. 运行应用
 streamlit run silicon_app.py
 
 📝 使用指南
@@ -52,4 +50,4 @@ streamlit run silicon_app.py
 本项目为 MVP (最小可行性产品) 版本。
 当前版本针对 10k token 上下文进行了优化，以平衡响应速度与准确率。
 建议使用 Chrome 浏览器 以获得最佳体验。
-Created by [Vincent Zhang] | 2025
+Created by Vincent Zhang | 2025
