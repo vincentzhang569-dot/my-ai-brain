@@ -97,12 +97,18 @@ st.markdown("""
             padding: 10px 0;
         }
         
-        /* 文件上传器优化 */
+        /* 文件上传器优化 - 仅移动端 */
         .stFileUploader {
             padding: 15px;
             border: 2px dashed #667eea;
             border-radius: 12px;
             background: #f8f9ff;
+        }
+        
+        /* 文件上传器标签文字优化 */
+        .stFileUploader label {
+            line-height: 1.5;
+            word-break: break-word;
         }
         
         /* 折叠面板优化 */
@@ -146,6 +152,50 @@ st.markdown("""
         .mobile-header {
             font-size: 2.2rem;
         }
+        
+        /* PC端文件上传器优化 - 防止文字重叠 */
+        .stFileUploader {
+            padding: 20px;
+            line-height: 1.6;
+            min-height: auto;
+        }
+        
+        /* 文件上传器标签文字 */
+        .stFileUploader label,
+        .stFileUploader label p {
+            line-height: 1.6 !important;
+            white-space: normal !important;
+            word-break: break-word !important;
+            display: block !important;
+            margin-bottom: 8px !important;
+            height: auto !important;
+            overflow: visible !important;
+        }
+        
+        /* 文件上传器内部容器 */
+        .stFileUploader > div {
+            line-height: 1.6;
+            height: auto;
+        }
+        
+        /* 文件上传器提示文字 */
+        .stFileUploader small,
+        .stFileUploader .stMarkdown {
+            line-height: 1.5;
+            display: block;
+            margin-top: 8px;
+        }
+        
+        /* PC端文本输入框优化 */
+        .stTextInput label {
+            line-height: 1.5;
+            white-space: normal;
+        }
+        
+        /* PC端折叠面板内容优化 */
+        .streamlit-expanderContent {
+            padding: 1rem;
+        }
     }
     
     /* ========== 通用样式 ========== */
@@ -158,6 +208,22 @@ st.markdown("""
         text-align: center;
         margin-bottom: 1.5rem;
         letter-spacing: 1px;
+    }
+    
+    /* PC端通用文字优化 - 防止重叠 */
+    @media (min-width: 769px) {
+        /* 所有标签文字 */
+        label, label p {
+            line-height: 1.5 !important;
+            white-space: normal !important;
+            height: auto !important;
+        }
+        
+        /* Streamlit组件文字 */
+        .stMarkdown, .stMarkdown p {
+            line-height: 1.6;
+            white-space: normal;
+        }
     }
     
     /* 卡片式容器 */
