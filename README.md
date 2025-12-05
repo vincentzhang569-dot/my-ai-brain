@@ -38,16 +38,25 @@
 ### 2. 安装依赖
 ```bash
 pip install -r requirements.txt
+```
 
-3. 运行应用
+### 3. 运行应用
+```bash
 streamlit run silicon_app.py
+```
 
-📝 使用指南
-身份验证：输入有效的 API Key (支持 SiliconFlow / OpenAI 格式)。
-文档装载：上传 PDF 格式的技术手册或说明书。
-智能交互：在对话框输入技术问题，获取 Markdown 格式的专业解答。
-⚠️ 说明
-本项目为 MVP (最小可行性产品) 版本。
-当前版本针对 10k token 上下文进行了优化，以平衡响应速度与准确率。
-建议使用 Chrome 浏览器 以获得最佳体验。
-Created by Vincent Zhang | 2025
+## 📝 使用指南
+
+1. **身份验证**：输入有效的 API Key (支持 SiliconFlow / OpenAI 格式)。
+2. **文档装载**：上传 PDF 格式的技术手册或说明书。
+3. **智能交互**：在对话框输入技术问题，获取 Markdown 格式的专业解答。
+
+## ⚠️ 说明
+
+- 本项目为 MVP (最小可行性产品) 版本。
+- 当前版本针对 10k token 上下文进行了优化，以平衡响应速度与准确率。
+- 建议使用 Chrome 浏览器以获得最佳体验。
+
+---
+
+**Created by [Vincent Zhang] | 2025**
