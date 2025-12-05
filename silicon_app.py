@@ -20,40 +20,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
-import streamlit as st
 
-# 1. 必须先设置页面配置
-st.set_page_config(page_title="工业机器人智能故障诊断系统", layout="wide")
-
-# 2. 注入 CSS 隐藏掉不需要的元素
-hide_ui_style = """
-<style>
-    /* 隐藏顶部的 Hamburger Menu (汉堡菜单) */
-    #MainMenu {visibility: hidden;}
-    
-    /* 隐藏顶部的 Deploy 按钮和工具栏 */
-    header {visibility: hidden;}
-    
-    /* 隐藏底部的 "Made with Streamlit" */
-    footer {visibility: hidden;}
-    
-    /* 核心：隐藏右下角的 "Manage App" 浮动按钮 (Avatar) */
-    /* 注意：Streamlit Cloud 的这个按钮 class 经常变，这里使用了模糊匹配 */
-    div[class*="viewerBadge"] {
-        display: none !important;
-    }
-    
-    /* 针对移动端，调整顶部空白，让内容上移 */
-    .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 1rem !important;
-    }
-</style>
-"""
-st.markdown(hide_ui_style, unsafe_allow_html=True)
-
-# --- 下面开始写你的主程序逻辑 ---
-st.title("🤖 工业机器人智能故障诊断系统")
 # --- 2. 移动端优化 CSS (原生App级体验) ---
 st.markdown("""
 <style>
@@ -965,7 +932,3 @@ if prompt:
             st.warning("🔑 API Key 验证失败，请检查密钥是否正确")
         elif "429" in error_msg or "rate limit" in error_msg.lower():
             st.warning("⏱️ 请求过于频繁，请稍后再试")
-
-
-
-
