@@ -1,6 +1,15 @@
 import streamlit as st
 from openai import OpenAI
 import pdfplumber
+from datetime import datetime
+from io import BytesIO
+try:
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
 
 # --- 1. 页面配置 (移动端优先) ---
 st.set_page_config(
@@ -278,6 +287,37 @@ st.markdown("""
             }
         }
     }
+    
+    /* ========== 快捷指令按钮样式 ========== */
+    .quick-actions-container {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    @media (max-width: 768px) {
+        .quick-actions-container {
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        
+        /* 移动端快捷指令按钮优化 */
+        .stButton > button[kind="secondary"] {
+            font-size: 13px;
+            padding: 10px 12px;
+        }
+    }
+    
+    /* 下载按钮样式 */
+    .download-btn-container {
+        margin-top: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 12px;
+        text-align: center;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -295,6 +335,99 @@ def read_pdf_text(uploaded_file) -> str:
         st.error(f"解析PDF出错了: {e}")
         return ""
 
+# --- 生成对话记录 Markdown ---
+def generate_markdown_export(messages, doc_name=""):
+    """生成Markdown格式的对话记录"""
+    md_content = f"""# 工业智脑对话记录
+
+**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+**文档名称**: {doc_name if doc_name else '未上传文档'}
+
+---
+
+"""
+    for i, msg in enumerate(messages, 1):
+        role = "用户" if msg["role"] == "user" else "AI助手"
+        md_content += f"## {i}. {role}\n\n"
+        md_content += f"{msg['content']}\n\n"
+        md_content += "---\n\n"
+    
+    return md_content
+
+# --- 生成对话记录 Word ---
+def generate_word_export(messages, doc_name=""):
+    """生成Word格式的对话记录"""
+    if not DOCX_AVAILABLE:
+        return None
+    
+    doc = Document()
+    
+    # 设置文档样式
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = '微软雅黑'
+    font.size = Pt(11)
+    
+    # 标题
+    title = doc.add_heading('工业智脑对话记录', 0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_run = title.runs[0]
+    title_run.font.name = '微软雅黑'
+    title_run.font.size = Pt(18)
+    title_run.font.bold = True
+    
+    # 元信息
+    meta_para = doc.add_paragraph()
+    meta_para.add_run(f'生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}').font.name = '微软雅黑'
+    meta_para = doc.add_paragraph()
+    meta_para.add_run(f'文档名称: {doc_name if doc_name else "未上传文档"}').font.name = '微软雅黑'
+    doc.add_paragraph('')
+    
+    # 分隔线
+    sep_para = doc.add_paragraph('─' * 60)
+    sep_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph('')
+    
+    # 对话内容
+    for i, msg in enumerate(messages, 1):
+        role = "用户" if msg["role"] == "user" else "AI助手"
+        heading = doc.add_heading(f'{i}. {role}', level=1)
+        heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        heading_run = heading.runs[0]
+        heading_run.font.name = '微软雅黑'
+        heading_run.font.size = Pt(14)
+        heading_run.font.bold = True
+        heading_run.font.color.rgb = RGBColor(102, 126, 234) if msg["role"] == "user" else RGBColor(0, 0, 0)
+        
+        # 添加内容
+        content = msg['content']
+        paragraphs = content.split('\n')
+        for para in paragraphs:
+            if para.strip():
+                p = doc.add_paragraph()
+                p.style.font.name = '微软雅黑'
+                # 处理Markdown加粗
+                parts = para.split('**')
+                for idx, part in enumerate(parts):
+                    run = p.add_run(part)
+                    run.font.name = '微软雅黑'
+                    if idx % 2 == 1:  # 奇数索引是加粗内容
+                        run.bold = True
+                if not parts:
+                    run = p.add_run(para)
+                    run.font.name = '微软雅黑'
+        
+        doc.add_paragraph('')
+        sep_para = doc.add_paragraph('─' * 60)
+        sep_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph('')
+    
+    # 保存到BytesIO
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
 # --- 初始化状态 ---
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "🤖 您好！我是您的工业技术顾问。\n\n**快速开始：**\n1. 点击上方 ⚙️ **设置与文档** 展开配置面板\n2. 输入您的 SiliconFlow API Key\n3. 上传 PDF 技术手册\n4. 开始提问！"}]
@@ -302,6 +435,8 @@ if "current_file" not in st.session_state:
     st.session_state.current_file = ""
 if "pdf_content" not in st.session_state:
     st.session_state.pdf_content = ""
+if "pending_quick_action" not in st.session_state:
+    st.session_state.pending_quick_action = None
 
 # --- 3. 界面布局 (移动端优化) ---
 
@@ -383,13 +518,85 @@ elif not st.session_state.pdf_content:
 else:
     st.success("✅ 一切就绪，可以开始提问了！")
 
+# === 快捷指令按钮 (工业现场一键操作) ===
+if st.session_state.get('api_key_input') and st.session_state.pdf_content:
+    st.markdown("**⚡ 快捷指令**")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📄 全文摘要", use_container_width=True, help="一键生成文档全文摘要"):
+            st.session_state.pending_quick_action = "请为这份文档生成一份详细的全文摘要，包括主要章节、核心内容和关键要点。"
+            st.rerun()
+    
+    with col2:
+        if st.button("🔧 故障诊断", use_container_width=True, help="快速进入故障排查模式"):
+            st.session_state.pending_quick_action = "请列出这份文档中涉及的所有故障代码、故障原因和对应的解决方案。如果文档中没有相关内容，请说明。"
+            st.rerun()
+    
+    with col3:
+        if st.button("⚠️ 安全须知", use_container_width=True, help="查看安全操作注意事项"):
+            st.session_state.pending_quick_action = "请提取这份文档中所有关于安全操作、注意事项、警告信息的内容，并按重要性排序。"
+            st.rerun()
+
 # 显示聊天记录 (移动端优化)
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
+# === 对话记录下载功能 ===
+if len(st.session_state.messages) > 1:  # 至少有用户和AI的对话
+    st.divider()
+    st.markdown("**💾 导出对话记录**")
+    
+    download_col1, download_col2 = st.columns(2)
+    
+    with download_col1:
+        # Markdown下载
+        md_content = generate_markdown_export(
+            st.session_state.messages, 
+            st.session_state.current_file
+        )
+        st.download_button(
+            label="📄 下载 Markdown",
+            data=md_content,
+            file_name=f"对话记录_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+            mime="text/markdown",
+            use_container_width=True,
+            help="下载为Markdown格式，适合文档管理"
+        )
+    
+    with download_col2:
+        # Word下载
+        if DOCX_AVAILABLE:
+            word_buffer = generate_word_export(
+                st.session_state.messages,
+                st.session_state.current_file
+            )
+            if word_buffer:
+                st.download_button(
+                    label="📝 下载 Word",
+                    data=word_buffer,
+                    file_name=f"对话记录_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True,
+                    help="下载为Word格式，适合工单汇报"
+                )
+        else:
+            st.info("💡 安装 python-docx 以支持Word导出\n`pip install python-docx`", icon="ℹ️")
+
 # --- 5. 处理用户输入 (移动端优化) ---
-if prompt := st.chat_input("💬 输入技术问题..."):
+# 处理快捷指令
+prompt = None
+if st.session_state.pending_quick_action:
+    prompt = st.session_state.pending_quick_action
+    st.session_state.pending_quick_action = None  # 清除标志
+
+# 处理用户手动输入
+user_input = st.chat_input("💬 输入技术问题...")
+if user_input:
+    prompt = user_input
+
+if prompt:
     # 验证配置
     if not api_key:
         st.toast("⚠️ 请先在设置中输入 API Key", icon="⚠️")
@@ -457,4 +664,5 @@ if prompt := st.chat_input("💬 输入技术问题..."):
             st.warning("🔑 API Key 验证失败，请检查密钥是否正确")
         elif "429" in error_msg or "rate limit" in error_msg.lower():
             st.warning("⏱️ 请求过于频繁，请稍后再试")
+
 
