@@ -3,6 +3,8 @@ from openai import OpenAI
 import pdfplumber
 from datetime import datetime
 from io import BytesIO
+import hashlib
+import json
 try:
     from docx import Document
     from docx.shared import Pt, RGBColor
@@ -321,6 +323,99 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- 应用版本号（用于检测代码更新）---
+APP_VERSION = "1.0.0"  # 更新代码时修改此版本号
+
+# --- 注入 JavaScript 用于本地存储 ---
+st.markdown(f"""
+<script>
+// 本地存储管理 - 保存和恢复状态
+(function() {{
+    const APP_VERSION = '{APP_VERSION}';
+    
+    // 检查版本更新
+    const savedVersion = localStorage.getItem('industrial_ai_version');
+    if (savedVersion && savedVersion !== APP_VERSION) {{
+        // 版本更新，清除旧缓存（可选，也可以保留）
+        console.log('检测到版本更新:', savedVersion, '->', APP_VERSION);
+        // 如果需要清除旧缓存，取消下面的注释
+        // localStorage.removeItem('industrial_ai_api_key');
+        // localStorage.removeItem('industrial_ai_doc_name');
+        // localStorage.removeItem('industrial_ai_doc_hash');
+    }}
+    localStorage.setItem('industrial_ai_version', APP_VERSION);
+    
+    // 保存 API Key 到 localStorage
+    function saveApiKey(key) {{
+        if (key && key.trim()) {{
+            localStorage.setItem('industrial_ai_api_key', key);
+        }}
+    }}
+    
+    // 从 localStorage 恢复 API Key
+    function restoreApiKey() {{
+        return localStorage.getItem('industrial_ai_api_key') || '';
+    }}
+    
+    // 保存文档信息
+    function saveDocumentInfo(fileName, contentHash) {{
+        if (fileName && contentHash) {{
+            localStorage.setItem('industrial_ai_doc_name', fileName);
+            localStorage.setItem('industrial_ai_doc_hash', contentHash);
+        }}
+    }}
+    
+    // 获取保存的文档信息
+    function getDocumentInfo() {{
+        return {{
+            name: localStorage.getItem('industrial_ai_doc_name') || '',
+            hash: localStorage.getItem('industrial_ai_doc_hash') || ''
+        }};
+    }}
+    
+    // 清除保存的状态
+    function clearSavedState() {{
+        localStorage.removeItem('industrial_ai_api_key');
+        localStorage.removeItem('industrial_ai_doc_name');
+        localStorage.removeItem('industrial_ai_doc_hash');
+        localStorage.removeItem('industrial_ai_version');
+    }}
+    
+    // 暴露函数到全局
+    window.IndustrialAIStorage = {{
+        saveApiKey: saveApiKey,
+        restoreApiKey: restoreApiKey,
+        saveDocumentInfo: saveDocumentInfo,
+        getDocumentInfo: getDocumentInfo,
+        clearSavedState: clearSavedState,
+        version: APP_VERSION
+    }};
+    
+    // 页面加载时恢复 API Key
+    window.addEventListener('load', function() {{
+        setTimeout(function() {{
+            const apiKeyInputs = document.querySelectorAll('input[type="password"]');
+            apiKeyInputs.forEach(function(input) {{
+                // 恢复保存的 API Key
+                const savedKey = window.IndustrialAIStorage.restoreApiKey();
+                if (savedKey && !input.value) {{
+                    input.value = savedKey;
+                    // 触发 change 事件
+                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                }}
+                
+                // 监听输入变化并保存
+                input.addEventListener('input', function(e) {{
+                    window.IndustrialAIStorage.saveApiKey(e.target.value);
+                }});
+            }});
+        }}, 1000);
+    }});
+}})();
+</script>
+""", unsafe_allow_html=True)
+
 # --- 核心函数：读取PDF ---
 def read_pdf_text(uploaded_file) -> str:
     text_parts = []
@@ -334,6 +429,13 @@ def read_pdf_text(uploaded_file) -> str:
     except Exception as e:
         st.error(f"解析PDF出错了: {e}")
         return ""
+
+# --- 计算文档内容哈希 ---
+def calculate_content_hash(content: str) -> str:
+    """计算文档内容的哈希值，用于检测文档是否已加载"""
+    if not content:
+        return ""
+    return hashlib.md5(content.encode('utf-8')).hexdigest()
 
 # --- 生成对话记录 Markdown ---
 def generate_markdown_export(messages, doc_name=""):
@@ -437,6 +539,10 @@ if "pdf_content" not in st.session_state:
     st.session_state.pdf_content = ""
 if "pending_quick_action" not in st.session_state:
     st.session_state.pending_quick_action = None
+if "doc_hash" not in st.session_state:
+    st.session_state.doc_hash = ""
+if "restored_from_cache" not in st.session_state:
+    st.session_state.restored_from_cache = False
 
 # --- 3. 界面布局 (移动端优化) ---
 
@@ -456,16 +562,116 @@ with st.expander("⚙️ 设置与文档", expanded=show_expander):
         doc_status = "✅" if st.session_state.pdf_content else "❌"
         st.caption(f"文档: {doc_status}")
     
+    # 恢复保存的状态（仅在首次加载时）
+    if not st.session_state.restored_from_cache:
+        # 使用JavaScript读取localStorage并设置到session_state
+        st.markdown("""
+        <script>
+        // 读取localStorage中的API Key
+        const savedApiKey = localStorage.getItem('industrial_ai_api_key') || '';
+        const savedDocInfo = {
+            name: localStorage.getItem('industrial_ai_doc_name') || '',
+            hash: localStorage.getItem('industrial_ai_doc_hash') || ''
+        };
+        
+        // 将值传递给Streamlit（通过URL参数或组件通信）
+        if (savedApiKey) {
+            // 触发Streamlit事件来设置值
+            window.parent.postMessage({
+                type: 'streamlit:setComponentValue',
+                key: 'restored_api_key',
+                value: savedApiKey
+            }, '*');
+        }
+        </script>
+        """, unsafe_allow_html=True)
+        st.session_state.restored_from_cache = True
+    
     st.divider()
     
-    # 1. API Key 输入
+    # 1. API Key 输入（支持自动保存和恢复）
     api_key = st.text_input(
         "🔑 SiliconFlow API Key", 
         type="password", 
         key="api_key_input",
         placeholder="请输入 sk- 开头的密钥",
-        help="在 SiliconFlow 官网获取您的 API Key"
+        help="在 SiliconFlow 官网获取您的 API Key（输入后会自动保存到浏览器，刷新页面不会丢失）"
     )
+    
+    # 自动保存API Key到localStorage
+    if api_key:
+        # 转义特殊字符以避免JavaScript错误
+        escaped_key = api_key.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+        st.markdown(f"""
+        <script>
+        (function() {{
+            try {{
+                const currentKey = '{escaped_key}';
+                const savedKey = localStorage.getItem('industrial_ai_api_key');
+                if (currentKey && currentKey !== savedKey) {{
+                    localStorage.setItem('industrial_ai_api_key', currentKey);
+                }}
+            }} catch(e) {{
+                console.error('保存API Key失败:', e);
+            }}
+        }})();
+        </script>
+        """, unsafe_allow_html=True)
+    
+    # 恢复按钮（如果localStorage有值但输入框为空）
+    if not api_key:
+        # 检查是否有保存的API Key
+        st.markdown("""
+        <script>
+        (function() {
+            const savedKey = localStorage.getItem('industrial_ai_api_key');
+            if (savedKey) {
+                // 在页面上显示提示
+                const hint = document.createElement('div');
+                hint.style.cssText = 'margin-top: 8px; padding: 8px; background: #e3f2fd; border-radius: 6px; font-size: 12px; color: #1976d2;';
+                hint.innerHTML = '💡 检测到您之前保存过API Key，点击下方按钮快速恢复';
+                const input = document.querySelector('input[type="password"][placeholder*="sk-"]');
+                if (input && input.parentElement) {
+                    input.parentElement.appendChild(hint);
+                }
+            }
+        })();
+        </script>
+        """, unsafe_allow_html=True)
+        
+        if st.button("🔄 恢复上次保存的 API Key", use_container_width=True, help="从浏览器缓存中恢复上次输入的API Key"):
+            # 使用JavaScript读取并尝试填充
+            st.markdown("""
+            <script>
+            (function() {
+                const savedKey = localStorage.getItem('industrial_ai_api_key');
+                if (savedKey) {
+                    // 找到API Key输入框
+                    const inputs = document.querySelectorAll('input[type="password"]');
+                    let found = false;
+                    inputs.forEach(input => {
+                        const placeholder = input.getAttribute('placeholder') || '';
+                        if (placeholder.includes('sk-') && !input.value) {
+                            input.value = savedKey;
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                            found = true;
+                        }
+                    });
+                    if (found) {
+                        // 延迟刷新以确保值已设置
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 300);
+                    } else {
+                        alert('未找到API Key输入框，请手动输入');
+                    }
+                } else {
+                    alert('没有找到保存的API Key');
+                }
+            })();
+            </script>
+            """, unsafe_allow_html=True)
     
     # 2. 文件上传 (移动端优化)
     st.markdown("**📄 上传技术手册**")
@@ -497,6 +703,25 @@ with st.expander("⚙️ 设置与文档", expanded=show_expander):
         if st.button("🗑️ 清空", use_container_width=True, help="清空所有对话记录"):
             st.session_state.messages = [{"role": "assistant", "content": "🤖 对话历史已清空，请重新提问。"}]
             st.rerun()
+    
+    # 清除缓存按钮
+    st.markdown("---")
+    if st.button("🗑️ 清除所有保存的状态（API Key和文档信息）", use_container_width=True, help="清除浏览器中保存的所有缓存数据"):
+        st.markdown("""
+        <script>
+        if (window.IndustrialAIStorage) {
+            window.IndustrialAIStorage.clearSavedState();
+            alert('缓存已清除！');
+        }
+        </script>
+        """, unsafe_allow_html=True)
+        # 清除session_state
+        st.session_state.api_key_input = ""
+        st.session_state.pdf_content = ""
+        st.session_state.current_file = ""
+        st.session_state.doc_hash = ""
+        st.session_state.messages = [{"role": "assistant", "content": "🤖 所有状态已清除，请重新配置。"}]
+        st.rerun()
 
     # 处理文件读取
     if uploaded_file:
@@ -505,7 +730,19 @@ with st.expander("⚙️ 设置与文档", expanded=show_expander):
                 text = read_pdf_text(uploaded_file)
                 st.session_state.pdf_content = text
                 st.session_state.current_file = uploaded_file.name
+                # 计算文档哈希并保存到localStorage
+                doc_hash = calculate_content_hash(text)
+                st.session_state.doc_hash = doc_hash
+                # 保存文档信息到localStorage
+                st.markdown(f"""
+                <script>
+                if (window.IndustrialAIStorage) {{
+                    window.IndustrialAIStorage.saveDocumentInfo('{uploaded_file.name}', '{doc_hash}');
+                }}
+                </script>
+                """, unsafe_allow_html=True)
             st.success(f"✅ 文档加载成功: **{uploaded_file.name}**")
+            st.info("💾 状态已自动保存，刷新页面后不会丢失（API Key和文档信息）")
             st.balloons()  # 成功提示动画
 
 # --- 4. 聊天区域 (移动端优化) ---
@@ -517,6 +754,9 @@ elif not st.session_state.pdf_content:
     st.info("📄 请上传 PDF 文档以开始智能问答")
 else:
     st.success("✅ 一切就绪，可以开始提问了！")
+    # 显示状态保存提示
+    if st.session_state.get('api_key_input') and st.session_state.pdf_content:
+        st.caption("💾 您的配置已自动保存，刷新页面后不会丢失（API Key和文档信息会保留）")
 
 # === 快捷指令按钮 (工业现场一键操作) ===
 if st.session_state.get('api_key_input') and st.session_state.pdf_content:
@@ -664,5 +904,3 @@ if prompt:
             st.warning("🔑 API Key 验证失败，请检查密钥是否正确")
         elif "429" in error_msg or "rate limit" in error_msg.lower():
             st.warning("⏱️ 请求过于频繁，请稍后再试")
-
-
