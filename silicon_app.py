@@ -532,7 +532,7 @@ def generate_word_export(messages, doc_name=""):
 
 # --- 初始化状态 ---
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "🤖 您好！我是您的工业技术顾问。\n\n**快速开始：**\n1. 点击上方 ⚙️ **设置与文档** 展开配置面板\n2. 输入您的 SiliconFlow API Key\n3. 上传 PDF 技术手册\n4. 开始提问！"}]
+    st.session_state.messages = [{"role": "assistant", "content": "🤖 您好！我是您的AI智能助手。\n\n**快速开始：**\n1. 点击上方 ⚙️ **设置** 输入您的 SiliconFlow API Key\n2. （可选）上传 PDF 文档进行文档问答\n3. 开始提问！\n\n💡 **提示**：本网站不局限于工业问题，任何法律法规允许的问题都可以提问。您可以先输入API Key直接提问，也可以上传文档后进行基于文档的问答。"}]
 if "current_file" not in st.session_state:
     st.session_state.current_file = ""
 if "pdf_content" not in st.session_state:
@@ -543,6 +543,8 @@ if "doc_hash" not in st.session_state:
     st.session_state.doc_hash = ""
 if "restored_from_cache" not in st.session_state:
     st.session_state.restored_from_cache = False
+if "selected_model" not in st.session_state:
+    st.session_state.selected_model = "Qwen/Qwen2.5-7B-Instruct"
 
 # --- 3. 界面布局 (移动端优化) ---
 
@@ -550,17 +552,21 @@ if "restored_from_cache" not in st.session_state:
 st.markdown('<p class="mobile-header">🏭 INDUSTRIAL AI BRAIN</p>', unsafe_allow_html=True)
 
 # === 设置面板 (移动端友好的折叠设计) ===
-show_expander = not st.session_state.get('api_key_input') or not st.session_state.pdf_content
+# 只检查API Key，不强制要求文档
+show_expander = not st.session_state.get('api_key_input')
 
-with st.expander("⚙️ 设置与文档", expanded=show_expander):
+with st.expander("⚙️ 设置", expanded=show_expander):
     # 状态指示器
-    status_col1, status_col2 = st.columns(2)
+    status_col1, status_col2, status_col3 = st.columns(3)
     with status_col1:
         api_status = "✅" if st.session_state.get('api_key_input') else "❌"
         st.caption(f"API Key: {api_status}")
     with status_col2:
-        doc_status = "✅" if st.session_state.pdf_content else "❌"
+        doc_status = "✅" if st.session_state.pdf_content else "⭕"
         st.caption(f"文档: {doc_status}")
+    with status_col3:
+        model_name = st.session_state.get('selected_model', 'Qwen/Qwen2.5-7B-Instruct').split('/')[-1]
+        st.caption(f"模型: {model_name[:15]}")
     
     # 恢复保存的状态（仅在首次加载时）
     if not st.session_state.restored_from_cache:
@@ -689,7 +695,7 @@ with st.expander("⚙️ 设置与文档", expanded=show_expander):
     
     st.divider()
     
-    # 3. 高级设置 (移动端紧凑布局)
+    # 4. 高级设置 (移动端紧凑布局)
     st.markdown("**⚙️ 高级设置**")
     col_p1, col_p2 = st.columns([2, 1])
     with col_p1:
@@ -749,16 +755,26 @@ with st.expander("⚙️ 设置与文档", expanded=show_expander):
 
 # 动态状态提示
 if not st.session_state.get('api_key_input'):
-    st.warning("⚠️ 请先在设置中输入 API Key")
-elif not st.session_state.pdf_content:
-    st.info("📄 请上传 PDF 文档以开始智能问答")
+    st.warning("⚠️ 请先在设置中输入 API Key 以开始使用")
 else:
-    st.success("✅ 一切就绪，可以开始提问了！")
-    # 显示状态保存提示
-    if st.session_state.get('api_key_input') and st.session_state.pdf_content:
-        st.caption("💾 您的配置已自动保存，刷新页面后不会丢失（API Key和文档信息会保留）")
+    if st.session_state.pdf_content:
+        st.success("✅ 一切就绪！您可以基于文档提问，也可以直接提问任何问题。")
+        st.caption("💾 您的配置已自动保存，刷新页面后不会丢失")
+    else:
+        st.info("💡 已就绪！您可以开始提问。如需基于文档问答，可在设置中上传PDF文档。")
+    
+    # 添加使用提示
+    st.markdown("""
+    <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 10px 0;">
+        <strong>📌 使用提示：</strong><br>
+        • 本网站不局限于工业问题，任何<strong>法律法规允许</strong>的问题都可以提问<br>
+        • 您可以先输入API Key直接提问，也可以上传文档后进行基于文档的问答<br>
+        • 支持技术咨询、代码问题、学习辅导、生活问答等多种场景
+    </div>
+    """, unsafe_allow_html=True)
 
 # === 快捷指令按钮 (工业现场一键操作) ===
+# 只有在有文档时才显示快捷指令
 if st.session_state.get('api_key_input') and st.session_state.pdf_content:
     st.markdown("**⚡ 快捷指令**")
     col1, col2, col3 = st.columns(3)
@@ -837,13 +853,9 @@ if user_input:
     prompt = user_input
 
 if prompt:
-    # 验证配置
+    # 验证配置（只检查API Key）
     if not api_key:
         st.toast("⚠️ 请先在设置中输入 API Key", icon="⚠️")
-        st.stop()
-    
-    if not st.session_state.pdf_content:
-        st.toast("📄 请先上传 PDF 文档", icon="📄")
         st.stop()
         
     # 添加用户消息
@@ -851,25 +863,40 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # 构建系统提示词 (移动端优化 - 更简洁的回答)
+    # 构建系统提示词（根据是否有文档选择不同策略）
     pdf_text = st.session_state.pdf_content
+    selected_model = st.session_state.get('selected_model', 'Qwen/Qwen2.5-7B-Instruct')
+    
     if pdf_text:
-        system_prompt = f"""你是一个专业的工业技术顾问，擅长分析技术文档。
+        # 有文档：基于文档回答
+        system_prompt = f"""你是一个专业的AI助手，擅长分析文档和回答问题。
 
 【任务要求】：
 1. 严格基于以下文档内容回答问题，不要编造信息
 2. 回答要简洁明了，适合在手机上阅读
 3. 使用 Markdown 格式，关键信息用 **加粗** 标注
-4. 如果问题超出文档范围，明确告知"文档中未提及此内容"
+4. 如果问题超出文档范围，明确告知"文档中未提及此内容"，但可以基于你的知识提供一般性建议
 5. 对于故障排查类问题，请按步骤列出解决方案
+6. 回答要专业、准确、有帮助
 
 【文档内容】：
 {pdf_text[:8000]}
 
 请开始回答用户问题："""
     else:
-        system_prompt = """你是一个AI助手。请用简洁、专业的语言回答问题。
-回答要适合在手机上阅读，使用 Markdown 格式。"""
+        # 无文档：通用AI助手
+        system_prompt = """你是一个智能AI助手，擅长回答各种问题。
+
+【任务要求】：
+1. 回答要准确、专业、有帮助
+2. 使用简洁明了的语言，适合在手机上阅读
+3. 使用 Markdown 格式，关键信息用 **加粗** 标注
+4. 对于技术问题，提供详细的步骤说明
+5. 对于代码问题，提供可运行的代码示例
+6. 如果涉及法律法规，确保回答符合相关法规要求
+7. 如果不知道答案，诚实告知，不要编造信息
+
+请用专业、友好的方式回答用户问题。"""
 
     messages_for_api = [{"role": "system", "content": system_prompt}] + st.session_state.messages
 
@@ -879,9 +906,10 @@ if prompt:
         
         with st.chat_message("assistant"):
             # 显示加载状态
-            with st.spinner("🤔 AI 正在思考中..."):
+            model_name = st.session_state.get('selected_model', 'Qwen/Qwen2.5-7B-Instruct')
+            with st.spinner(f"🤔 {model_name.split('/')[-1]} 正在思考中..."):
                 stream = client.chat.completions.create(
-                    model="Qwen/Qwen2.5-7B-Instruct",
+                    model=model_name,
                     messages=messages_for_api,
                     stream=True,
                     temperature=temperature,
@@ -904,3 +932,4 @@ if prompt:
             st.warning("🔑 API Key 验证失败，请检查密钥是否正确")
         elif "429" in error_msg or "rate limit" in error_msg.lower():
             st.warning("⏱️ 请求过于频繁，请稍后再试")
+
