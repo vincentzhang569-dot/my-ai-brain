@@ -767,7 +767,7 @@ else:
     st.markdown("""
     <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 10px 0;">
         <strong>📌 使用提示：</strong><br>
-        • 本网站不局限于工业问题，任何<strong>法律法规允许</strong>的问题都可以提问<br>
+        • 本网站不局限于工业问题
         • 您可以先输入API Key直接提问，也可以上传文档后进行基于文档的问答<br>
         • 支持技术咨询、代码问题、学习辅导、生活问答等多种场景
     </div>
@@ -932,5 +932,6 @@ if prompt:
             st.warning("🔑 API Key 验证失败，请检查密钥是否正确")
         elif "429" in error_msg or "rate limit" in error_msg.lower():
             st.warning("⏱️ 请求过于频繁，请稍后再试")
+
 
 
