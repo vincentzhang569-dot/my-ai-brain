@@ -532,7 +532,7 @@ def generate_word_export(messages, doc_name=""):
 
 # --- 初始化状态 ---
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "🤖 您好！我是您的AI智能助手。\n\n**快速开始：**\n1. 点击上方 ⚙️ **设置** 输入您的 SiliconFlow API Key\n2. （可选）上传 PDF 文档进行文档问答\n3. 开始提问！\n\n💡 **提示**：本网站不局限于工业问题，任何法律法规允许的问题都可以提问。您可以先输入API Key直接提问，也可以上传文档后进行基于文档的问答。"}]
+    st.session_state.messages = [{"role": "assistant", "content": "🤖 您好！我是您的AI智能助手。\n\n**快速开始：**\n1. 点击上方 ⚙️ **设置** 输入您的 SiliconFlow API Key\n2. （可选）上传 PDF 文档进行文档问答\n3. 开始提问！\n\n💡 **提示**：本网站不局限于工业问题。您可以先输入API Key直接提问，也可以上传文档后进行基于文档的问答。"}]
 if "current_file" not in st.session_state:
     st.session_state.current_file = ""
 if "pdf_content" not in st.session_state:
@@ -932,4 +932,5 @@ if prompt:
             st.warning("🔑 API Key 验证失败，请检查密钥是否正确")
         elif "429" in error_msg or "rate limit" in error_msg.lower():
             st.warning("⏱️ 请求过于频繁，请稍后再试")
+
 
