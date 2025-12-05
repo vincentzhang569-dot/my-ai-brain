@@ -37,7 +37,7 @@
 
 ### 2. 安装依赖
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt```**
 
 3. 运行应用
 streamlit run silicon_app.py
