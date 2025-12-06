@@ -792,14 +792,14 @@ else:
     st.info("💡 已就绪！您可以开始提问。如需基于文档问答，可在设置中上传PDF文档。")
 
 # 添加使用提示
-    st.markdown("""
-    <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 10px 0;">
-        <strong>📌 使用提示：</strong><br>
-        • 本网站不局限于工业问题
-        • 您可以先输入API Key直接提问，也可以上传文档后进行基于文档的问答<br>
-        • 支持技术咨询、代码问题、学习辅导、生活问答等多种场景
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown("""
+<div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 10px 0;">
+    <strong>📌 使用提示：</strong><br>
+    • 本网站不局限于工业问题
+    • 可以直接提问，也可以上传文档后进行基于文档的问答<br>
+    • 支持技术咨询、代码问题、学习辅导、生活问答等多种场景
+</div>
+""", unsafe_allow_html=True)
 
 # === 预设问题按钮 (Quick Prompts) - 工业现场快速提问 ===
 st.markdown("**⚡ 快速提问（点击下方按钮）**")
