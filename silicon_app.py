@@ -5,6 +5,8 @@ from datetime import datetime
 from io import BytesIO
 import hashlib
 import json
+import base64
+from PIL import Image
 try:
     from docx import Document
     from docx.shared import Pt, RGBColor
@@ -545,6 +547,10 @@ if "restored_from_cache" not in st.session_state:
     st.session_state.restored_from_cache = False
 if "selected_model" not in st.session_state:
     st.session_state.selected_model = "Qwen/Qwen2.5-7B-Instruct"
+if "uploaded_image" not in st.session_state:
+    st.session_state.uploaded_image = None
+if "image_base64" not in st.session_state:
+    st.session_state.image_base64 = None
 
 # --- 3. 界面布局 (移动端优化) ---
 
@@ -840,7 +846,44 @@ if len(st.session_state.messages) > 1:  # 至少有用户和AI的对话
         else:
             st.info("💡 安装 python-docx 以支持Word导出\n`pip install python-docx`", icon="ℹ️")
 
-# --- 5. 处理用户输入 (移动端优化) ---
+# --- 5. 图片上传功能（多模态支持）---
+def image_to_base64(image):
+    """将图片转换为 base64 编码"""
+    buffered = BytesIO()
+    # 转换为 RGB 模式（如果是 RGBA 等）
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    image.save(buffered, format="JPEG", quality=85)
+    return base64.b64encode(buffered.getvalue()).decode()
+
+# 图片上传组件（仅在已配置 API Key 时显示）
+if st.session_state.get('api_key_input'):
+    st.markdown("**📷 上传故障图片（可选）**")
+    uploaded_image = st.file_uploader(
+        "支持 PNG、JPG、JPEG 格式",
+        type=['png', 'jpg', 'jpeg'],
+        help="可以上传设备报错照片，AI 会分析图片内容。如果当前模型不支持图片，将尝试使用视觉模型。",
+        key="image_uploader"
+    )
+    
+    if uploaded_image is not None:
+        try:
+            image = Image.open(uploaded_image)
+            st.image(image, caption="上传的图片", use_container_width=True)
+            # 转换为 base64
+            st.session_state.image_base64 = image_to_base64(image)
+            st.session_state.uploaded_image = uploaded_image
+            st.success("✅ 图片已上传，可在提问时一起分析")
+        except Exception as e:
+            st.error(f"❌ 图片处理失败: {str(e)}")
+            st.session_state.image_base64 = None
+            st.session_state.uploaded_image = None
+    else:
+        # 清除图片状态
+        st.session_state.image_base64 = None
+        st.session_state.uploaded_image = None
+
+# --- 6. 处理用户输入 (移动端优化) ---
 # 处理快捷指令
 prompt = None
 if st.session_state.pending_quick_action:
@@ -857,15 +900,34 @@ if prompt:
     if not api_key:
         st.toast("⚠️ 请先在设置中输入 API Key", icon="⚠️")
         st.stop()
-        
+    
+    # 检查是否有图片
+    has_image = st.session_state.image_base64 is not None
+    
     # 添加用户消息
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    user_message_content = prompt
+    if has_image:
+        user_message_content = f"[包含图片] {prompt}"
+    st.session_state.messages.append({"role": "user", "content": user_message_content})
     with st.chat_message("user"):
         st.markdown(prompt)
+        if has_image and st.session_state.uploaded_image:
+            st.image(st.session_state.uploaded_image, use_container_width=True)
 
     # 构建系统提示词（根据是否有文档选择不同策略）
     pdf_text = st.session_state.pdf_content
     selected_model = st.session_state.get('selected_model', 'Qwen/Qwen2.5-7B-Instruct')
+    
+    # 如果有图片，尝试使用支持视觉的模型
+    if has_image:
+        # 尝试使用视觉模型（如果用户有权限）
+        vision_models = [
+            "Qwen/Qwen2.5-VL-7B-Instruct",  # 视觉语言模型
+            "Qwen/Qwen2-VL-7B-Instruct",    # 备用视觉模型
+            "Qwen/Qwen2.5-7B-Instruct"      # 如果视觉模型不可用，回退到文本模型
+        ]
+        # 优先使用视觉模型
+        selected_model = vision_models[0]
     
     if pdf_text:
         # 有文档：基于文档回答
@@ -878,6 +940,7 @@ if prompt:
 4. 如果问题超出文档范围，明确告知"文档中未提及此内容"，但可以基于你的知识提供一般性建议
 5. 对于故障排查类问题，请按步骤列出解决方案
 6. 回答要专业、准确、有帮助
+{"7. 如果用户上传了图片，请仔细分析图片内容，识别故障代码、错误信息、设备状态等，并结合文档内容给出诊断建议" if has_image else ""}
 
 【文档内容】：
 {pdf_text[:8000]}
@@ -885,7 +948,7 @@ if prompt:
 请开始回答用户问题："""
     else:
         # 无文档：通用AI助手
-        system_prompt = """你是一个智能AI助手，擅长回答各种问题。
+        system_prompt = f"""你是一个智能AI助手，擅长回答各种问题。
 
 【任务要求】：
 1. 回答要准确、专业、有帮助
@@ -895,10 +958,39 @@ if prompt:
 5. 对于代码问题，提供可运行的代码示例
 6. 如果涉及法律法规，确保回答符合相关法规要求
 7. 如果不知道答案，诚实告知，不要编造信息
+{"8. 如果用户上传了图片，请仔细分析图片内容，识别故障代码、错误信息、设备状态等，并给出专业的诊断建议和解决方案" if has_image else ""}
 
 请用专业、友好的方式回答用户问题。"""
 
-    messages_for_api = [{"role": "system", "content": system_prompt}] + st.session_state.messages
+    # 构建消息列表
+    messages_for_api = [{"role": "system", "content": system_prompt}]
+    
+    # 添加历史消息（除了最后一条用户消息，因为我们要重新构建它）
+    for msg in st.session_state.messages[:-1]:
+        messages_for_api.append(msg)
+    
+    # 构建最后一条用户消息（包含图片）
+    last_user_message = {"role": "user", "content": []}
+    
+    # 添加文本内容
+    last_user_message["content"].append({
+        "type": "text",
+        "text": prompt
+    })
+    
+    # 如果有图片，添加图片内容
+    if has_image:
+        last_user_message["content"].append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{st.session_state.image_base64}"
+            }
+        })
+    else:
+        # 如果没有图片，直接使用文本
+        last_user_message = {"role": "user", "content": prompt}
+    
+    messages_for_api.append(last_user_message)
 
     # 调用AI API
     try:
@@ -906,18 +998,99 @@ if prompt:
         
         with st.chat_message("assistant"):
             # 显示加载状态
-            model_name = st.session_state.get('selected_model', 'Qwen/Qwen2.5-7B-Instruct')
-            with st.spinner(f"🤔 {model_name.split('/')[-1]} 正在思考中..."):
-                stream = client.chat.completions.create(
-                    model=model_name,
-                    messages=messages_for_api,
-                    stream=True,
-                    temperature=temperature,
-                )
-                response = st.write_stream(stream)
+            model_display_name = selected_model.split('/')[-1]
+            spinner_text = f"🤔 {model_display_name} 正在分析中..."
+            if has_image:
+                spinner_text = f"👁️ {model_display_name} 正在分析图片..."
+            
+            with st.spinner(spinner_text):
+                # 如果使用视觉模型失败，尝试回退到文本模型
+                try:
+                    stream = client.chat.completions.create(
+                        model=selected_model,
+                        messages=messages_for_api,
+                        stream=True,
+                        temperature=temperature,
+                    )
+                    response = st.write_stream(stream)
+                except Exception as vision_error:
+                    # 如果视觉模型不可用，且用户上传了图片，尝试使用文本模型并提示
+                    if has_image and ("Qwen2.5-VL" in selected_model or "Qwen2-VL" in selected_model):
+                        st.warning(f"⚠️ 视觉模型 {selected_model} 不可用，尝试使用文本模型分析。建议：如需图片分析功能，请使用支持视觉的模型（如 Qwen2.5-VL-7B-Instruct）。")
+                        # 回退到文本模型，但移除图片
+                        text_only_messages = []
+                        for msg in messages_for_api:
+                            if isinstance(msg.get("content"), list):
+                                # 过滤掉图片，只保留文本
+                                text_content = [item for item in msg["content"] if item.get("type") == "text"]
+                                if text_content:
+                                    text_only_messages.append({
+                                        "role": msg["role"],
+                                        "content": text_content[0].get("text", "")
+                                    })
+                            else:
+                                text_only_messages.append(msg)
+                        
+                        # 在提示词中添加图片描述请求
+                        if text_only_messages and text_only_messages[0].get("role") == "system":
+                            text_only_messages[0]["content"] += "\n\n注意：用户上传了一张图片，但由于当前模型不支持图片输入，请基于用户的问题描述进行分析。"
+                        
+                        stream = client.chat.completions.create(
+                            model="Qwen/Qwen2.5-7B-Instruct",
+                            messages=text_only_messages,
+                            stream=True,
+                            temperature=temperature,
+                        )
+                        response = st.write_stream(stream)
+                    else:
+                        # 其他错误，直接抛出
+                        raise vision_error
         
         # 保存回复
         st.session_state.messages.append({"role": "assistant", "content": response})
+        
+        # 反馈机制（隐形埋点）
+        feedback_key = f"feedback_{len(st.session_state.messages)}"
+        feedback = st.feedback(
+            type="thumbs",
+            key=feedback_key,
+            help="这个回答对您有帮助吗？"
+        )
+        
+        # 记录反馈（静默记录，不打扰用户）
+        if feedback is not None:
+            # 初始化反馈数据存储
+            if 'feedback_data' not in st.session_state:
+                st.session_state.feedback_data = []
+            
+            # 记录反馈数据
+            feedback_entry = {
+                'query': prompt,
+                'response': response[:200] if len(response) > 200 else response,  # 截断长响应
+                'feedback': feedback,
+                'has_image': has_image,
+                'has_document': bool(pdf_text),
+                'model': selected_model,
+                'timestamp': len(st.session_state.messages)
+            }
+            st.session_state.feedback_data.append(feedback_entry)
+            
+            # 可以在这里添加：
+            # 1. 保存到本地文件（JSON/CSV）
+            # 2. 发送到分析平台
+            # 3. 保存到数据库
+            # 示例：保存到本地 JSON 文件（可选，取消注释以启用）
+            # try:
+            #     import json
+            #     with open('feedback_log.json', 'a', encoding='utf-8') as f:
+            #         json.dump(feedback_entry, f, ensure_ascii=False)
+            #         f.write('\n')
+            # except:
+            #     pass
+        
+        # 清除图片状态（可选：如果希望图片保留在对话中，可以注释掉）
+        # st.session_state.image_base64 = None
+        # st.session_state.uploaded_image = None
         
         # 成功提示
         st.toast("✅ 回答完成", icon="✅")
@@ -925,11 +1098,13 @@ if prompt:
     except Exception as e:
         error_msg = str(e)
         st.error(f"❌ 请求失败: {error_msg}")
-        st.info("💡 请检查：1) API Key 是否正确 2) 网络连接是否正常 3) 账户余额是否充足")
+        st.info("💡 请检查：1) API Key 是否正确 2) 网络连接是否正常 3) 账户余额是否充足 4) 模型是否支持图片输入")
         
         # 添加重试建议
         if "401" in error_msg or "Unauthorized" in error_msg:
             st.warning("🔑 API Key 验证失败，请检查密钥是否正确")
         elif "429" in error_msg or "rate limit" in error_msg.lower():
             st.warning("⏱️ 请求过于频繁，请稍后再试")
+        elif has_image and ("vision" in error_msg.lower() or "image" in error_msg.lower()):
+            st.warning("📷 当前模型可能不支持图片输入。如需图片分析功能，请使用支持视觉的模型（如 Qwen2.5-VL-7B-Instruct）。")
 
