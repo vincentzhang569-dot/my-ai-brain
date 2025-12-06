@@ -1,12 +1,5 @@
 import streamlit as st
-import dashscope
-
-# 它会自动去读 secrets.toml (本地) 或者 Secrets 设置 (云端)
-try:
-    dashscope.api_key = st.secrets["DASHSCOPE_API_KEY"]
-except FileNotFoundError:
-    st.error("未找到 API Key，请检查配置！")
-
+from openai import OpenAI
 import pdfplumber
 from datetime import datetime
 from io import BytesIO
@@ -14,9 +7,7 @@ import hashlib
 import json
 import base64
 import os
-import tempfile
 from PIL import Image
-from http import HTTPStatus
 try:
     from docx import Document
     from docx.shared import Pt, RGBColor
@@ -24,6 +15,20 @@ try:
     DOCX_AVAILABLE = True
 except ImportError:
     DOCX_AVAILABLE = False
+
+# --- 硅基流动 API 配置 ---
+# Base URL 和 API Key 配置
+SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
+SILICONFLOW_API_KEY = "你的sk-开头的硅基流动KEY"  # 请替换为您的实际 API Key
+SILICONFLOW_MODEL = "Qwen/Qwen2-VL-72B-Instruct"
+
+# 初始化 OpenAI 客户端（用于调用硅基流动 API）
+@st.cache_resource
+def get_openai_client():
+    return OpenAI(
+        api_key=SILICONFLOW_API_KEY,
+        base_url=SILICONFLOW_BASE_URL
+    )
 
 # --- 1. 页面配置 (移动端优先) ---
 st.set_page_config(
@@ -585,13 +590,13 @@ st.markdown('<p class="mobile-header">🏭 INDUSTRIAL AI BRAIN</p>', unsafe_allo
 
 # === 设置面板 (移动端友好的折叠设计) ===
 # 只检查API Key，不强制要求文档
-show_expander = not dashscope.api_key
+show_expander = not SILICONFLOW_API_KEY or SILICONFLOW_API_KEY == "你的sk-开头的硅基流动KEY"
 
 with st.expander("⚙️ 设置", expanded=show_expander):
     # 状态指示器
     status_col1, status_col2, status_col3 = st.columns(3)
     with status_col1:
-        api_status = "✅" if dashscope.api_key else "❌"
+        api_status = "✅" if (SILICONFLOW_API_KEY and SILICONFLOW_API_KEY != "你的sk-开头的硅基流动KEY") else "❌"
         st.caption(f"API Key: {api_status}")
     with status_col2:
         doc_status = "✅" if st.session_state.pdf_content else "⭕"
@@ -626,15 +631,13 @@ with st.expander("⚙️ 设置", expanded=show_expander):
     
     st.divider()
     
-    # 1. API Key 状态显示（从 secrets 读取，无需手动输入）
-    st.info("🔑 API Key 已从配置文件读取（无需手动输入）")
-    st.caption("💡 如需修改 API Key，请在 `.streamlit/secrets.toml` 文件中配置 `DASHSCOPE_API_KEY`")
-    
-    # 显示当前 API Key 状态
-    if dashscope.api_key:
-        st.success(f"✅ API Key 已配置（前4位: {dashscope.api_key[:4]}...）")
+    # 1. API Key 状态显示
+    if SILICONFLOW_API_KEY and SILICONFLOW_API_KEY != "你的sk-开头的硅基流动KEY":
+        st.success(f"✅ API Key 已配置（前4位: {SILICONFLOW_API_KEY[:4]}...）")
+        st.caption(f"📡 使用模型: {SILICONFLOW_MODEL}")
     else:
-        st.warning("⚠️ 请配置 DASHSCOPE_API_KEY（在 `.streamlit/secrets.toml` 文件中）")
+        st.warning("⚠️ 请在代码中配置 SILICONFLOW_API_KEY")
+        st.caption("💡 当前使用测试 Key，请替换为您的实际 API Key")
     
     
     # 2. 文件上传 (移动端优化)
@@ -736,8 +739,8 @@ with st.expander("⚙️ 设置", expanded=show_expander):
 # --- 4. 聊天区域 (移动端优化) ---
 
 # 动态状态提示
-if not dashscope.api_key:
-    st.warning("⚠️ 请配置 DASHSCOPE_API_KEY 以开始使用（在 `.streamlit/secrets.toml` 文件中）")
+if not SILICONFLOW_API_KEY or SILICONFLOW_API_KEY == "你的sk-开头的硅基流动KEY":
+    st.warning("⚠️ 请在代码中配置 SILICONFLOW_API_KEY 以开始使用")
 else:
     if st.session_state.pdf_content:
         st.success("✅ 一切就绪！您可以基于文档提问，也可以直接提问任何问题。")
@@ -756,7 +759,7 @@ else:
     """, unsafe_allow_html=True)
 
 # === 预设问题按钮 (Quick Prompts) - 工业现场快速提问 ===
-if dashscope.api_key:
+if SILICONFLOW_API_KEY and SILICONFLOW_API_KEY != "你的sk-开头的硅基流动KEY":
     st.markdown("**⚡ 快速提问（点击下方按钮）**")
     
     # 使用列布局显示预设问题按钮
@@ -843,28 +846,17 @@ if len(st.session_state.messages) > 1:  # 至少有用户和AI的对话
             st.info("💡 安装 python-docx 以支持Word导出\n`pip install python-docx`", icon="ℹ️")
 
 # --- 5. 图片处理函数 ---
-def save_uploaded_image_to_temp(uploaded_image):
-    """将 Streamlit 上传的图片保存为临时文件，返回文件路径"""
-    if uploaded_image is None:
-        return None
-    
-    try:
-        # 创建临时文件
-        temp_dir = tempfile.gettempdir()
-        temp_file_path = os.path.join(temp_dir, "temp_current_image.png")
-        
-        # 打开图片并保存
-        image = Image.open(uploaded_image)
-        # 转换为 RGB 模式（如果是 RGBA 等）
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        # 保存为 PNG 格式
-        image.save(temp_file_path, format="PNG")
-        
-        return temp_file_path
-    except Exception as e:
-        st.error(f"❌ 图片保存失败: {str(e)}")
-        return None
+def image_to_base64(image):
+    """将 PIL Image 对象转换为 Base64 字符串"""
+    buffered = BytesIO()
+    # 转换为 RGB 模式（如果是 RGBA 等）
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    # 保存为 PNG 格式到内存
+    image.save(buffered, format="PNG")
+    # 转换为 Base64
+    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    return img_base64
 
 # --- 6. 处理用户输入 (移动端优化) ---
 # 处理快捷指令
@@ -879,20 +871,24 @@ if user_input:
     prompt = user_input
 
 if prompt:
-    # 验证配置（只检查API Key）
-    if not dashscope.api_key:
-        st.toast("⚠️ 请配置 DASHSCOPE_API_KEY", icon="⚠️")
+    # 验证配置（检查API Key）
+    if not SILICONFLOW_API_KEY or SILICONFLOW_API_KEY == "你的sk-开头的硅基流动KEY":
+        st.toast("⚠️ 请配置 SILICONFLOW_API_KEY", icon="⚠️")
         st.stop()
     
     # 检查是否有图片
     has_image = st.session_state.uploaded_image is not None
     
-    # 保存图片为临时文件（如果上传了图片）
-    temp_image_path = None
+    # 将图片转换为 Base64（如果上传了图片）
+    image_base64 = None
     if has_image:
-        temp_image_path = save_uploaded_image_to_temp(st.session_state.uploaded_image)
-        if not temp_image_path:
-            has_image = False  # 如果保存失败，视为没有图片
+        try:
+            image = Image.open(st.session_state.uploaded_image)
+            image_base64 = image_to_base64(image)
+        except Exception as e:
+            st.error(f"❌ 图片处理失败: {str(e)}")
+            has_image = False
+            image_base64 = None
     
     # 添加用户消息
     user_message_content = prompt
@@ -941,78 +937,64 @@ if prompt:
 
 请用专业、友好的方式回答用户问题。"""
 
-    # 调用 DashScope API
+    # 调用硅基流动 API
     try:
+        client = get_openai_client()
+        
         with st.chat_message("assistant"):
             # 显示加载状态
-            model_display_name = "Qwen-VL-Max"
+            model_display_name = SILICONFLOW_MODEL.split('/')[-1]
             spinner_text = f"🤔 {model_display_name} 正在分析中..."
             if has_image:
                 spinner_text = f"👁️ {model_display_name} 正在分析图片..."
             
             with st.spinner(spinner_text):
-                # 构建消息内容
+                # 构建用户消息内容（OpenAI 标准格式）
                 user_content = []
                 
-                # 如果有图片，添加图片和文本
-                if has_image and temp_image_path:
-                    # 使用 file:// 协议指定本地文件路径
-                    user_content.append({'image': f'file://{temp_image_path}'})
-                    user_content.append({'text': prompt})
-                else:
-                    # 只有文本
-                    user_content.append({'text': prompt})
+                # 添加文本
+                user_content.append({"type": "text", "text": prompt})
                 
-                # 构建消息列表（DashScope 格式）
-                messages = [
-                    {
-                        'role': 'system',
-                        'content': system_prompt
-                    },
-                    {
-                        'role': 'user',
-                        'content': user_content
-                    }
-                ]
+                # 如果有图片，添加图片（Base64 格式）
+                if has_image and image_base64:
+                    user_content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{image_base64}"
+                        }
+                    })
                 
-                # 调用 DashScope MultiModalConversation API
-                # 流式调用
-                responses = dashscope.MultiModalConversation.call(
-                    model='qwen-vl-max',
+                # 构建消息列表（OpenAI 标准格式）
+                messages = [{"role": "system", "content": system_prompt}]
+                
+                # 添加历史消息（除了最后一条用户消息，因为我们要重新构建它）
+                for msg in st.session_state.messages[:-1]:
+                    # 历史消息可能是简单格式或复杂格式
+                    if isinstance(msg.get("content"), list):
+                        # 如果已经是复杂格式，直接添加
+                        messages.append(msg)
+                    else:
+                        # 如果是简单格式，转换为标准格式
+                        messages.append({
+                            "role": msg["role"],
+                            "content": msg["content"]
+                        })
+                
+                # 添加当前用户消息
+                messages.append({
+                    "role": "user",
+                    "content": user_content
+                })
+                
+                # 调用硅基流动 API（流式输出）
+                stream = client.chat.completions.create(
+                    model=SILICONFLOW_MODEL,
                     messages=messages,
                     stream=True
                 )
                 
                 # 处理流式响应
-                response_text = ""
-                response_placeholder = st.empty()
-                
-                for response in responses:
-                    if response.status_code == HTTPStatus.OK:
-                        # 检查是否有内容
-                        if hasattr(response, 'output') and response.output:
-                            if 'choices' in response.output and len(response.output['choices']) > 0:
-                                choice = response.output['choices'][0]
-                                if 'message' in choice and 'content' in choice['message']:
-                                    content = choice['message']['content']
-                                    if isinstance(content, list):
-                                        # 内容可能是列表
-                                        for item in content:
-                                            if isinstance(item, dict) and 'text' in item:
-                                                response_text += item['text']
-                                    elif isinstance(content, str):
-                                        response_text += content
-                                    
-                                    # 实时更新显示
-                                    response_placeholder.markdown(response_text)
-                    else:
-                        # 处理错误
-                        error_msg = f"请求失败，状态码: {response.status_code}"
-                        if hasattr(response, 'message'):
-                            error_msg += f", 错误信息: {response.message}"
-                        raise Exception(error_msg)
-                
-                response = response_text
+                response = st.write_stream(stream)
         
         # 保存回复
         st.session_state.messages.append({"role": "assistant", "content": response})
@@ -1053,7 +1035,7 @@ if prompt:
                     'feedback': feedback,
                     'has_image': has_image,
                     'has_document': bool(pdf_text),
-                    'model': 'qwen-vl-max',
+                    'model': SILICONFLOW_MODEL,
                     'timestamp': len(st.session_state.messages)
                 }
                 st.session_state.feedback_data.append(feedback_entry)
