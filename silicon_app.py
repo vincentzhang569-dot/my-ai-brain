@@ -24,28 +24,18 @@ st.set_page_config(
 # --- 2. 移动端优化 CSS (原生App级体验) ---
 st.markdown("""
 <style>
-    /* ========== 基础清理与去广告 ========== */
-    #MainMenu {visibility: hidden; display: none !important;}
-    header {visibility: hidden; display: none !important;}
-    footer {visibility: hidden; display: none !important;}
-    .stDeployButton {display: none !important;}
-    [data-testid="stDecoration"] {display: none !important;}
-    [data-testid="stStatusWidget"] {display: none !important;}
-    
-    /* 隐藏 Streamlit 默认的 viewer badge (右下角) */
-    .viewerBadge_container__1QSob {display: none !important;}
-    ._container_gzau3_1 {display: none !important;}
-    .st-emotion-cache-1wbqy5l {display: none !important;}
-    
-    /* 隐藏可能存在的iframe广告注入 */
-    iframe {display: none !important;}
+    /* ========== 基础清理（保留必要元素） ========== */
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stDeployButton {display: none;}
     
     /* ========== 移动端响应式布局 ========== */
     @media (max-width: 768px) {
         /* 主容器优化 */
         .block-container {
             padding-top: 1rem;
-            padding-bottom: 8rem; /* 增加底部留白，防止内容被输入框遮挡 */
+            padding-bottom: 8rem; /* 留足底部空间，避免被输入框或系统条遮挡 */
             padding-left: 1rem;
             padding-right: 1rem;
             max-width: 100%;
@@ -85,10 +75,10 @@ st.markdown("""
             bottom: 0 !important;
             left: 0 !important;
             right: 0 !important;
-            z-index: 9999 !important; /* 确保在最上层 */
+            z-index: 2147483647 !important; /* 顶层，避免被弹窗挡住 */
             background: white;
             padding: 12px 16px;
-            padding-bottom: 20px !important; /* 增加底部内边距，防止被系统条遮挡 */
+            padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
             box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
             border-top: 1px solid #e0e0e0;
         }
@@ -97,6 +87,13 @@ st.markdown("""
             border-radius: 25px;
             padding: 10px 20px;
             font-size: 16px; /* 防止iOS自动缩放 */
+        }
+
+        /* 屏蔽常见广告 iframe */
+        iframe[src*="ads"],
+        iframe[src*="doubleclick"],
+        iframe[src*="googleads"] {
+            display: none !important;
         }
         
         /* 按钮优化 - 触摸友好 */
@@ -556,6 +553,8 @@ if "restored_from_cache" not in st.session_state:
     st.session_state.restored_from_cache = False
 if "selected_model" not in st.session_state:
     st.session_state.selected_model = "Qwen/Qwen2.5-7B-Instruct"
+if "scroll_pinned" not in st.session_state:
+    st.session_state.scroll_pinned = False
 
 # --- 3. 界面布局 (移动端优化) ---
 
@@ -944,21 +943,63 @@ if prompt:
         elif "429" in error_msg or "rate limit" in error_msg.lower():
             st.warning("⏱️ 请求过于频繁，请稍后再试")
 
-# --- 6. 页面行为控制 ---
-# 仅在首次加载或无对话历史时强制滚动到顶部
-if len(st.session_state.messages) <= 1:
+# --- 6. 页面行为控制与弹窗处理 ---
+# 首屏强制停留在顶部（仅执行一次，避免页面初始下滑）
+if not st.session_state.scroll_pinned:
+    st.session_state.scroll_pinned = True
     st.markdown("""
     <script>
-        function scrollToTop() {
+    (function() {
+        function scrollTopOnce() {
             window.scrollTo(0, 0);
             const main = document.querySelector('.block-container');
             if (main) main.scrollTo(0, 0);
             const header = document.getElementById('top-header');
             if (header) header.scrollIntoView();
         }
-        // 多次尝试确保生效
-        setTimeout(scrollToTop, 100);
-        setTimeout(scrollToTop, 500);
-        setTimeout(scrollToTop, 1000);
+        const run = () => {
+            setTimeout(scrollTopOnce, 50);
+            setTimeout(scrollTopOnce, 250);
+            setTimeout(scrollTopOnce, 800);
+        };
+        if (document.readyState === 'complete') {
+            run();
+        } else {
+            window.addEventListener('load', run, { once: true });
+        }
+        window.addEventListener('focus', run);
+    })();
     </script>
     """, unsafe_allow_html=True)
+
+# 移动端定时清理固定定位的常见广告/弹窗，防止遮挡输入框
+st.markdown("""
+<script>
+(function() {
+    if (window.innerWidth > 820) return; // 仅移动端
+    const selectors = [
+        'iframe[src*="ads"]',
+        'iframe[src*="doubleclick"]',
+        'iframe[src*="googleads"]',
+        '[class*="ad"]',
+        '[id*="ad"]',
+        '[class*="popup"]',
+        '[id*="popup"]'
+    ];
+    function clean() {
+        selectors.forEach(sel => {
+            document.querySelectorAll(sel).forEach(el => {
+                const style = getComputedStyle(el);
+                const isFixed = style.position === 'fixed' || style.position === 'sticky';
+                if (isFixed) {
+                    el.style.setProperty('display', 'none', 'important');
+                }
+            });
+        });
+    }
+    clean();
+    setInterval(clean, 1200);
+})();
+</script>
+""", unsafe_allow_html=True)
+
