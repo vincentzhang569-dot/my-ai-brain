@@ -17,16 +17,16 @@ except ImportError:
     DOCX_AVAILABLE = False
 
 # --- 硅基流动 API 配置 ---
-# Base URL 和 API Key 配置
+# Base URL 和 API Key 配置（硬编码）
 SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
-SILICONFLOW_API_KEY = "sk-691dac79d112435cbae08dd2fcf079d5"  # 请替换为您的实际 API Key
+api_key = "sk-worqfxfyknjmcddfidxhrhygcqjfonoccuftukmorynwfbtf"
 SILICONFLOW_MODEL = "Qwen/Qwen2-VL-72B-Instruct"
 
 # 初始化 OpenAI 客户端（用于调用硅基流动 API）
 @st.cache_resource
 def get_openai_client():
     return OpenAI(
-        api_key=SILICONFLOW_API_KEY,
+        api_key=api_key,
         base_url=SILICONFLOW_BASE_URL
     )
 
@@ -589,20 +589,17 @@ QUICK_PROMPTS = [
 st.markdown('<p class="mobile-header">🏭 INDUSTRIAL AI BRAIN</p>', unsafe_allow_html=True)
 
 # === 设置面板 (移动端友好的折叠设计) ===
-# 只检查API Key，不强制要求文档
-show_expander = not SILICONFLOW_API_KEY or SILICONFLOW_API_KEY == "你的sk-开头的硅基流动KEY"
-
-with st.expander("⚙️ 设置", expanded=show_expander):
+with st.expander("⚙️ 设置", expanded=False):
     # 状态指示器
     status_col1, status_col2, status_col3 = st.columns(3)
     with status_col1:
-        api_status = "✅" if (SILICONFLOW_API_KEY and SILICONFLOW_API_KEY != "你的sk-开头的硅基流动KEY") else "❌"
-        st.caption(f"API Key: {api_status}")
+        st.caption(f"API Key: ✅")
     with status_col2:
         doc_status = "✅" if st.session_state.pdf_content else "⭕"
         st.caption(f"文档: {doc_status}")
     with status_col3:
-        st.caption(f"模型: Qwen-VL-Max")
+        model_name = SILICONFLOW_MODEL.split('/')[-1]
+        st.caption(f"模型: {model_name}")
     
     # 恢复保存的状态（仅在首次加载时）
     if not st.session_state.restored_from_cache:
@@ -632,12 +629,8 @@ with st.expander("⚙️ 设置", expanded=show_expander):
     st.divider()
     
     # 1. API Key 状态显示
-    if SILICONFLOW_API_KEY and SILICONFLOW_API_KEY != "你的sk-开头的硅基流动KEY":
-        st.success(f"✅ API Key 已配置（前4位: {SILICONFLOW_API_KEY[:4]}...）")
-        st.caption(f"📡 使用模型: {SILICONFLOW_MODEL}")
-    else:
-        st.warning("⚠️ 请在代码中配置 SILICONFLOW_API_KEY")
-        st.caption("💡 当前使用测试 Key，请替换为您的实际 API Key")
+    st.success(f"✅ API Key 已配置（前4位: {api_key[:4]}...）")
+    st.caption(f"📡 使用模型: {SILICONFLOW_MODEL}")
     
     
     # 2. 文件上传 (移动端优化)
@@ -739,16 +732,13 @@ with st.expander("⚙️ 设置", expanded=show_expander):
 # --- 4. 聊天区域 (移动端优化) ---
 
 # 动态状态提示
-if not SILICONFLOW_API_KEY or SILICONFLOW_API_KEY == "你的sk-开头的硅基流动KEY":
-    st.warning("⚠️ 请在代码中配置 SILICONFLOW_API_KEY 以开始使用")
+if st.session_state.pdf_content:
+    st.success("✅ 一切就绪！您可以基于文档提问，也可以直接提问任何问题。")
+    st.caption("💾 您的配置已自动保存，刷新页面后不会丢失")
 else:
-    if st.session_state.pdf_content:
-        st.success("✅ 一切就绪！您可以基于文档提问，也可以直接提问任何问题。")
-        st.caption("💾 您的配置已自动保存，刷新页面后不会丢失")
-    else:
-        st.info("💡 已就绪！您可以开始提问。如需基于文档问答，可在设置中上传PDF文档。")
-    
-    # 添加使用提示
+    st.info("💡 已就绪！您可以开始提问。如需基于文档问答，可在设置中上传PDF文档。")
+
+# 添加使用提示
     st.markdown("""
     <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 10px 0;">
         <strong>📌 使用提示：</strong><br>
@@ -759,28 +749,27 @@ else:
     """, unsafe_allow_html=True)
 
 # === 预设问题按钮 (Quick Prompts) - 工业现场快速提问 ===
-if SILICONFLOW_API_KEY and SILICONFLOW_API_KEY != "你的sk-开头的硅基流动KEY":
-    st.markdown("**⚡ 快速提问（点击下方按钮）**")
-    
-    # 使用列布局显示预设问题按钮
-    # PC端：5个按钮并排；移动端：自动换行
-    prompt_cols = st.columns(5)
-    for idx, prompt_text in enumerate(QUICK_PROMPTS):
-        with prompt_cols[idx]:
-            if st.button(
-                prompt_text, 
-                key=f"quick_prompt_{idx}",
-                use_container_width=True,
-                help=f"快速提问：{prompt_text}"
-            ):
-                st.session_state.pending_quick_action = prompt_text
-                st.rerun()
-    
-    st.markdown("---")
+st.markdown("**⚡ 快速提问（点击下方按钮）**")
+
+# 使用列布局显示预设问题按钮
+# PC端：5个按钮并排；移动端：自动换行
+prompt_cols = st.columns(5)
+for idx, prompt_text in enumerate(QUICK_PROMPTS):
+    with prompt_cols[idx]:
+        if st.button(
+            prompt_text, 
+            key=f"quick_prompt_{idx}",
+            use_container_width=True,
+            help=f"快速提问：{prompt_text}"
+        ):
+            st.session_state.pending_quick_action = prompt_text
+            st.rerun()
+
+st.markdown("---")
 
 # === 快捷指令按钮 (工业现场一键操作) ===
 # 只有在有文档时才显示快捷指令
-if st.session_state.get('api_key_input') and st.session_state.pdf_content:
+if st.session_state.pdf_content:
     st.markdown("**⚡ 快捷指令**")
     col1, col2, col3 = st.columns(3)
     
@@ -871,10 +860,6 @@ if user_input:
     prompt = user_input
 
 if prompt:
-    # 验证配置（检查API Key）
-    if not SILICONFLOW_API_KEY or SILICONFLOW_API_KEY == "你的sk-开头的硅基流动KEY":
-        st.toast("⚠️ 请配置 SILICONFLOW_API_KEY", icon="⚠️")
-        st.stop()
     
     # 检查是否有图片
     has_image = st.session_state.uploaded_image is not None
