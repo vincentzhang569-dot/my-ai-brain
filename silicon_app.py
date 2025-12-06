@@ -25,6 +25,9 @@ st.set_page_config(
 st.markdown("""
 <style>
     /* ========== 基础清理（保留必要元素） ========== */
+    html, body {
+        scroll-behavior: auto !important; /* 防止平滑滚动把视口带到底部 */
+    }
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     footer {visibility: hidden;}
@@ -92,7 +95,8 @@ st.markdown("""
         /* 屏蔽常见广告 iframe */
         iframe[src*="ads"],
         iframe[src*="doubleclick"],
-        iframe[src*="googleads"] {
+        iframe[src*="googleads"],
+        iframe {
             display: none !important;
         }
         
@@ -944,63 +948,85 @@ if prompt:
             st.warning("⏱️ 请求过于频繁，请稍后再试")
 
 # --- 6. 页面行为控制与弹窗处理 ---
-# 首屏强制停留在顶部（仅执行一次，避免页面初始下滑）
+# 首屏强制停留在顶部、禁止输入框自动聚焦，并持续清理遮挡弹窗
 if not st.session_state.scroll_pinned:
     st.session_state.scroll_pinned = True
     st.markdown("""
     <script>
     (function() {
-        function scrollTopOnce() {
+        const isMobile = window.innerWidth <= 820;
+
+        // 1) 首屏强制停留顶部 + 阻止自动滚动到底部
+        function pinTop() {
             window.scrollTo(0, 0);
             const main = document.querySelector('.block-container');
             if (main) main.scrollTo(0, 0);
             const header = document.getElementById('top-header');
-            if (header) header.scrollIntoView();
+            if (header) header.scrollIntoView({block: 'start', behavior: 'instant'});
         }
-        const run = () => {
-            setTimeout(scrollTopOnce, 50);
-            setTimeout(scrollTopOnce, 250);
-            setTimeout(scrollTopOnce, 800);
+        const runTop = () => {
+            setTimeout(pinTop, 30);
+            setTimeout(pinTop, 200);
+            setTimeout(pinTop, 600);
         };
-        if (document.readyState === 'complete') {
-            run();
-        } else {
-            window.addEventListener('load', run, { once: true });
+
+        // 2) 移除 chat input 自动聚焦，避免打开即跳到底部
+        function defocusInput() {
+            const input = document.querySelector('.stChatInput input, .stChatInput textarea');
+            if (input) {
+                input.blur();
+                input.removeAttribute('autofocus');
+                input.setAttribute('autocomplete', 'off');
+            }
         }
-        window.addEventListener('focus', run);
+
+        // 3) 清理遮挡弹窗/广告（固定或粘性定位、高 z-index），保留 chat 输入框
+        const blockSelectors = [
+            'iframe',
+            '[class*=\"ad\"]',
+            '[id*=\"ad\"]',
+            '[class*=\"popup\"]',
+            '[id*=\"popup\"]',
+            '[class*=\"modal\"]',
+            '[id*=\"modal\"]'
+        ];
+        function cleanOverlays() {
+            blockSelectors.forEach(sel => {
+                document.querySelectorAll(sel).forEach(el => {
+                    if (el.closest('.stChatInput')) return; // 保留输入框
+                    const style = getComputedStyle(el);
+                    const isFixed = style.position === 'fixed' || style.position === 'sticky';
+                    const highZ = parseInt(style.zIndex || '0', 10) >= 10;
+                    if (isFixed || highZ) {
+                        el.style.setProperty('display', 'none', 'important');
+                        el.style.setProperty('visibility', 'hidden', 'important');
+                    }
+                });
+            });
+        }
+
+        // 4) 监听 DOM 变化，持续清理
+        const observer = new MutationObserver(() => {
+            defocusInput();
+            cleanOverlays();
+            pinTop();
+        });
+
+        const start = () => {
+            runTop();
+            defocusInput();
+            cleanOverlays();
+            observer.observe(document.body, { childList: true, subtree: true });
+            setInterval(() => { defocusInput(); cleanOverlays(); }, 1200);
+        };
+
+        if (document.readyState === 'complete') {
+            start();
+        } else {
+            window.addEventListener('load', start, { once: true });
+        }
+        window.addEventListener('focus', () => { runTop(); defocusInput(); cleanOverlays(); });
     })();
     </script>
     """, unsafe_allow_html=True)
-
-# 移动端定时清理固定定位的常见广告/弹窗，防止遮挡输入框
-st.markdown("""
-<script>
-(function() {
-    if (window.innerWidth > 820) return; // 仅移动端
-    const selectors = [
-        'iframe[src*="ads"]',
-        'iframe[src*="doubleclick"]',
-        'iframe[src*="googleads"]',
-        '[class*="ad"]',
-        '[id*="ad"]',
-        '[class*="popup"]',
-        '[id*="popup"]'
-    ];
-    function clean() {
-        selectors.forEach(sel => {
-            document.querySelectorAll(sel).forEach(el => {
-                const style = getComputedStyle(el);
-                const isFixed = style.position === 'fixed' || style.position === 'sticky';
-                if (isFixed) {
-                    el.style.setProperty('display', 'none', 'important');
-                }
-            });
-        });
-    }
-    clean();
-    setInterval(clean, 1200);
-})();
-</script>
-""", unsafe_allow_html=True)
-
 
