@@ -24,18 +24,28 @@ st.set_page_config(
 # --- 2. 移动端优化 CSS (原生App级体验) ---
 st.markdown("""
 <style>
-    /* ========== 基础清理 ========== */
-    #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
-    .stDeployButton {display: none;}
+    /* ========== 基础清理与去广告 ========== */
+    #MainMenu {visibility: hidden; display: none !important;}
+    header {visibility: hidden; display: none !important;}
+    footer {visibility: hidden; display: none !important;}
+    .stDeployButton {display: none !important;}
+    [data-testid="stDecoration"] {display: none !important;}
+    [data-testid="stStatusWidget"] {display: none !important;}
+    
+    /* 隐藏 Streamlit 默认的 viewer badge (右下角) */
+    .viewerBadge_container__1QSob {display: none !important;}
+    ._container_gzau3_1 {display: none !important;}
+    .st-emotion-cache-1wbqy5l {display: none !important;}
+    
+    /* 隐藏可能存在的iframe广告注入 */
+    iframe {display: none !important;}
     
     /* ========== 移动端响应式布局 ========== */
     @media (max-width: 768px) {
         /* 主容器优化 */
         .block-container {
             padding-top: 1rem;
-            padding-bottom: 6rem;
+            padding-bottom: 8rem; /* 增加底部留白，防止内容被输入框遮挡 */
             padding-left: 1rem;
             padding-right: 1rem;
             max-width: 100%;
@@ -75,9 +85,10 @@ st.markdown("""
             bottom: 0 !important;
             left: 0 !important;
             right: 0 !important;
-            z-index: 1000;
+            z-index: 9999 !important; /* 确保在最上层 */
             background: white;
             padding: 12px 16px;
+            padding-bottom: 20px !important; /* 增加底部内边距，防止被系统条遮挡 */
             box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
             border-top: 1px solid #e0e0e0;
         }
@@ -532,7 +543,7 @@ def generate_word_export(messages, doc_name=""):
 
 # --- 初始化状态 ---
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "🤖 您好！我是您的AI智能助手。\n\n**快速开始：**\n1. 点击上方 ⚙️ **设置** 输入您的 SiliconFlow API Key\n2. （可选）上传 PDF 文档进行文档问答\n3. 开始提问！\n\n💡 **提示**：本网站不局限于工业问题。您可以先输入API Key直接提问，也可以上传文档后进行基于文档的问答。"}]
+    st.session_state.messages = [{"role": "assistant", "content": "🤖 您好！我是您的AI智能助手。\n\n**快速开始：**\n1. 点击上方 ⚙️ **设置** 输入您的 SiliconFlow API Key\n2. （可选）上传 PDF 文档进行文档问答\n3. 开始提问！\n\n💡 **提示**：本网站不局限于工业问题，任何法律法规允许的问题都可以提问。您可以先输入API Key直接提问，也可以上传文档后进行基于文档的问答。"}]
 if "current_file" not in st.session_state:
     st.session_state.current_file = ""
 if "pdf_content" not in st.session_state:
@@ -549,7 +560,7 @@ if "selected_model" not in st.session_state:
 # --- 3. 界面布局 (移动端优化) ---
 
 # 顶部标题 (渐变色酷炫标题)
-st.markdown('<p class="mobile-header">🏭 INDUSTRIAL AI BRAIN</p>', unsafe_allow_html=True)
+st.markdown('<p class="mobile-header" id="top-header">🏭 INDUSTRIAL AI BRAIN</p>', unsafe_allow_html=True)
 
 # === 设置面板 (移动端友好的折叠设计) ===
 # 只检查API Key，不强制要求文档
@@ -767,7 +778,7 @@ else:
     st.markdown("""
     <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 10px 0;">
         <strong>📌 使用提示：</strong><br>
-        • 本网站不局限于工业问题
+        • 本网站不局限于工业问题，任何<strong>法律法规允许</strong>的问题都可以提问<br>
         • 您可以先输入API Key直接提问，也可以上传文档后进行基于文档的问答<br>
         • 支持技术咨询、代码问题、学习辅导、生活问答等多种场景
     </div>
@@ -932,3 +943,22 @@ if prompt:
             st.warning("🔑 API Key 验证失败，请检查密钥是否正确")
         elif "429" in error_msg or "rate limit" in error_msg.lower():
             st.warning("⏱️ 请求过于频繁，请稍后再试")
+
+# --- 6. 页面行为控制 ---
+# 仅在首次加载或无对话历史时强制滚动到顶部
+if len(st.session_state.messages) <= 1:
+    st.markdown("""
+    <script>
+        function scrollToTop() {
+            window.scrollTo(0, 0);
+            const main = document.querySelector('.block-container');
+            if (main) main.scrollTo(0, 0);
+            const header = document.getElementById('top-header');
+            if (header) header.scrollIntoView();
+        }
+        // 多次尝试确保生效
+        setTimeout(scrollToTop, 100);
+        setTimeout(scrollToTop, 500);
+        setTimeout(scrollToTop, 1000);
+    </script>
+    """, unsafe_allow_html=True)
