@@ -578,7 +578,7 @@ if "messages" not in st.session_state:
         },
         {
             "role": "assistant",
-            "content": "🤖 您好！我是您的工业机器人故障诊断专家。\n\n**我可以帮您：**\n1. 分析故障代码和错误信息\n2. 诊断设备故障原因\n3. 提供详细的排查步骤\n4. 提醒安全操作注意事项\n\n**使用方式：**\n• 直接描述故障现象\n• 也可以点击上方设置页面上传故障图片和技术手册（我会分析错误代码、线缆状态、仪表盘读数等）\n\n💡 请开始描述您遇到的故障问题！"
+            "content": "🤖 您好！我是您的工业机器人故障诊断专家。\n\n**我可以帮您：**\n1. 分析故障代码和错误信息\n2. 诊断设备故障原因\n3. 提供详细的排查步骤\n4. 提醒安全操作注意事项\n\n**使用方式：**\n• 直接描述故障现象\n• 点击上方设置页面上传故障图片和技术手册（我会分析错误代码、线缆状态、仪表盘读数等）\n\n💡 请开始描述您遇到的故障问题！"
         }
     ]
 if "current_file" not in st.session_state:
@@ -1107,4 +1107,5 @@ if prompt:
             st.warning("⏱️ 请求过于频繁，请稍后再试")
         elif has_image and ("vision" in error_msg.lower() or "image" in error_msg.lower()):
             st.warning("📷 当前模型可能不支持图片输入。如需图片分析功能，请使用支持视觉的模型（如 Qwen2.5-VL-7B-Instruct）。")
+
 
