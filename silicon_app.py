@@ -19,7 +19,7 @@ except ImportError:
 # --- 硅基流动 API 配置 ---
 # Base URL 和 API Key 配置
 SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
-SILICONFLOW_API_KEY = "你的sk-开头的硅基流动KEY"  # 请替换为您的实际 API Key
+SILICONFLOW_API_KEY = "sk-691dac79d112435cbae08dd2fcf079d5"  # 请替换为您的实际 API Key
 SILICONFLOW_MODEL = "Qwen/Qwen2-VL-72B-Instruct"
 
 # 初始化 OpenAI 客户端（用于调用硅基流动 API）
