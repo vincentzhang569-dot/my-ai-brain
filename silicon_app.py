@@ -473,7 +473,9 @@ def generate_markdown_export(messages, doc_name=""):
 ---
 
 """
-    for i, msg in enumerate(messages, 1):
+    # 过滤掉 system 消息，只导出用户和助手的对话
+    filtered_messages = [msg for msg in messages if msg.get("role") != "system"]
+    for i, msg in enumerate(filtered_messages, 1):
         role = "用户" if msg["role"] == "user" else "AI助手"
         md_content += f"## {i}. {role}\n\n"
         md_content += f"{msg['content']}\n\n"
@@ -515,8 +517,9 @@ def generate_word_export(messages, doc_name=""):
     sep_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph('')
     
-    # 对话内容
-    for i, msg in enumerate(messages, 1):
+    # 对话内容（过滤掉 system 消息）
+    filtered_messages = [msg for msg in messages if msg.get("role") != "system"]
+    for i, msg in enumerate(filtered_messages, 1):
         role = "用户" if msg["role"] == "user" else "AI助手"
         heading = doc.add_heading(f'{i}. {role}', level=1)
         heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -840,6 +843,10 @@ if st.session_state.pdf_content:
 
 # 显示聊天记录 (移动端优化)
 for msg in st.session_state.messages:
+    # 跳过 system 消息，不显示给用户
+    if msg.get("role") == "system":
+        continue
+    # 只显示 user 和 assistant 的消息
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
