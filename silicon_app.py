@@ -1051,42 +1051,63 @@ if prompt:
         
         # 反馈机制（隐形埋点）
         feedback_key = f"feedback_{len(st.session_state.messages)}"
-        feedback = st.feedback(
-            type="thumbs",
-            key=feedback_key,
-            help="这个回答对您有帮助吗？"
-        )
         
-        # 记录反馈（静默记录，不打扰用户）
-        if feedback is not None:
-            # 初始化反馈数据存储
-            if 'feedback_data' not in st.session_state:
-                st.session_state.feedback_data = []
+        # 检查是否已经反馈过
+        if feedback_key not in st.session_state.get('feedback_given', {}):
+            # 使用按钮实现反馈功能（兼容性更好）
+            st.markdown("**这个回答对您有帮助吗？**")
+            feedback_col1, feedback_col2 = st.columns(2)
+            feedback = None
             
-            # 记录反馈数据
-            feedback_entry = {
-                'query': prompt,
-                'response': response[:200] if len(response) > 200 else response,  # 截断长响应
-                'feedback': feedback,
-                'has_image': has_image,
-                'has_document': bool(pdf_text),
-                'model': selected_model,
-                'timestamp': len(st.session_state.messages)
-            }
-            st.session_state.feedback_data.append(feedback_entry)
+            with feedback_col1:
+                if st.button("👍 有帮助", key=f"{feedback_key}_positive", use_container_width=True):
+                    feedback = "positive"
             
-            # 可以在这里添加：
-            # 1. 保存到本地文件（JSON/CSV）
-            # 2. 发送到分析平台
-            # 3. 保存到数据库
-            # 示例：保存到本地 JSON 文件（可选，取消注释以启用）
-            # try:
-            #     import json
-            #     with open('feedback_log.json', 'a', encoding='utf-8') as f:
-            #         json.dump(feedback_entry, f, ensure_ascii=False)
-            #         f.write('\n')
-            # except:
-            #     pass
+            with feedback_col2:
+                if st.button("👎 没帮助", key=f"{feedback_key}_negative", use_container_width=True):
+                    feedback = "negative"
+            
+            # 记录反馈（静默记录，不打扰用户）
+            if feedback:
+                # 标记已反馈，避免重复记录
+                if 'feedback_given' not in st.session_state:
+                    st.session_state.feedback_given = {}
+                st.session_state.feedback_given[feedback_key] = True
+                
+                # 初始化反馈数据存储
+                if 'feedback_data' not in st.session_state:
+                    st.session_state.feedback_data = []
+                
+                # 记录反馈数据
+                feedback_entry = {
+                    'query': prompt,
+                    'response': response[:200] if len(response) > 200 else response,  # 截断长响应
+                    'feedback': feedback,
+                    'has_image': has_image,
+                    'has_document': bool(pdf_text),
+                    'model': selected_model,
+                    'timestamp': len(st.session_state.messages)
+                }
+                st.session_state.feedback_data.append(feedback_entry)
+                
+                # 显示感谢提示
+                st.success("✅ 感谢您的反馈！")
+                
+                # 可以在这里添加：
+                # 1. 保存到本地文件（JSON/CSV）
+                # 2. 发送到分析平台
+                # 3. 保存到数据库
+                # 示例：保存到本地 JSON 文件（可选，取消注释以启用）
+                # try:
+                #     import json
+                #     with open('feedback_log.json', 'a', encoding='utf-8') as f:
+                #         json.dump(feedback_entry, f, ensure_ascii=False)
+                #         f.write('\n')
+                # except:
+                #     pass
+        else:
+            # 已经反馈过，显示已反馈状态
+            st.caption("💡 您已对此回答进行反馈，感谢！")
         
         # 清除图片状态（可选：如果希望图片保留在对话中，可以注释掉）
         # st.session_state.image_base64 = None
