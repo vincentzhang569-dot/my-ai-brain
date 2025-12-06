@@ -1,12 +1,15 @@
 import streamlit as st
-from openai import OpenAI
 import pdfplumber
 from datetime import datetime
 from io import BytesIO
 import hashlib
 import json
 import base64
+import os
+import tempfile
 from PIL import Image
+import dashscope
+from http import HTTPStatus
 try:
     from docx import Document
     from docx.shared import Pt, RGBColor
@@ -549,8 +552,6 @@ if "selected_model" not in st.session_state:
     st.session_state.selected_model = "Qwen/Qwen2.5-7B-Instruct"
 if "uploaded_image" not in st.session_state:
     st.session_state.uploaded_image = None
-if "image_base64" not in st.session_state:
-    st.session_state.image_base64 = None
 
 # 预设问题（Quick Prompts）- 工业现场快速提问
 QUICK_PROMPTS = [
@@ -589,8 +590,7 @@ with st.expander("⚙️ 设置", expanded=show_expander):
         doc_status = "✅" if st.session_state.pdf_content else "⭕"
         st.caption(f"文档: {doc_status}")
     with status_col3:
-        model_name = st.session_state.get('selected_model', 'Qwen/Qwen2.5-7B-Instruct').split('/')[-1]
-        st.caption(f"模型: {model_name[:15]}")
+        st.caption(f"模型: Qwen-VL-Max")
     
     # 恢复保存的状态（仅在首次加载时）
     if not st.session_state.restored_from_cache:
@@ -621,12 +621,16 @@ with st.expander("⚙️ 设置", expanded=show_expander):
     
     # 1. API Key 输入（支持自动保存和恢复）
     api_key = st.text_input(
-        "🔑 SiliconFlow API Key", 
+        "🔑 DashScope API Key", 
         type="password", 
         key="api_key_input",
-        placeholder="请输入 sk- 开头的密钥",
-        help="在 SiliconFlow 官网获取您的 API Key（输入后会自动保存到浏览器，刷新页面不会丢失）"
+        placeholder="请输入 DashScope API Key",
+        help="在阿里云 DashScope 控制台获取您的 API Key（输入后会自动保存到浏览器，刷新页面不会丢失）"
     )
+    
+    # 设置 DashScope API Key
+    if api_key:
+        dashscope.api_key = api_key
     
     # 自动保存API Key到localStorage
     if api_key:
@@ -716,6 +720,30 @@ with st.expander("⚙️ 设置", expanded=show_expander):
         doc_length = len(st.session_state.pdf_content)
         st.success(f"📚 当前文档: **{st.session_state.current_file}**")
         st.caption(f"📊 文档大小: {doc_length:,} 字符 | 约 {doc_length//1000}K tokens")
+    
+    st.divider()
+    
+    # 3. 图片上传组件（侧边栏）
+    st.markdown("**📷 上传故障图片**")
+    uploaded_image = st.file_uploader(
+        "支持 PNG、JPG 格式",
+        type=['png', 'jpg', 'jpeg'],
+        help="上传设备故障照片，AI 会分析图片中的错误代码、线缆状态或仪表盘读数",
+        key="sidebar_image_uploader"
+    )
+    
+    # 如果上传了图片，显示缩略图
+    if uploaded_image is not None:
+        try:
+            image = Image.open(uploaded_image)
+            st.image(image, caption="上传的图片", use_container_width=True)
+            st.session_state.uploaded_image = uploaded_image
+            st.success("✅ 图片已上传")
+        except Exception as e:
+            st.error(f"❌ 图片处理失败: {str(e)}")
+            st.session_state.uploaded_image = None
+    else:
+        st.session_state.uploaded_image = None
     
     st.divider()
     
@@ -884,42 +912,29 @@ if len(st.session_state.messages) > 1:  # 至少有用户和AI的对话
         else:
             st.info("💡 安装 python-docx 以支持Word导出\n`pip install python-docx`", icon="ℹ️")
 
-# --- 5. 图片上传功能（多模态支持）---
-def image_to_base64(image):
-    """将图片转换为 base64 编码"""
-    buffered = BytesIO()
-    # 转换为 RGB 模式（如果是 RGBA 等）
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    image.save(buffered, format="JPEG", quality=85)
-    return base64.b64encode(buffered.getvalue()).decode()
-
-# 图片上传组件（仅在已配置 API Key 时显示）
-if st.session_state.get('api_key_input'):
-    st.markdown("**📷 上传故障图片（可选）**")
-    uploaded_image = st.file_uploader(
-        "支持 PNG、JPG、JPEG 格式",
-        type=['png', 'jpg', 'jpeg'],
-        help="可以上传设备报错照片，AI 会分析图片内容。如果当前模型不支持图片，将尝试使用视觉模型。",
-        key="image_uploader"
-    )
+# --- 5. 图片处理函数 ---
+def save_uploaded_image_to_temp(uploaded_image):
+    """将 Streamlit 上传的图片保存为临时文件，返回文件路径"""
+    if uploaded_image is None:
+        return None
     
-    if uploaded_image is not None:
-        try:
-            image = Image.open(uploaded_image)
-            st.image(image, caption="上传的图片", use_container_width=True)
-            # 转换为 base64
-            st.session_state.image_base64 = image_to_base64(image)
-            st.session_state.uploaded_image = uploaded_image
-            st.success("✅ 图片已上传，可在提问时一起分析")
-        except Exception as e:
-            st.error(f"❌ 图片处理失败: {str(e)}")
-            st.session_state.image_base64 = None
-            st.session_state.uploaded_image = None
-    else:
-        # 清除图片状态
-        st.session_state.image_base64 = None
-        st.session_state.uploaded_image = None
+    try:
+        # 创建临时文件
+        temp_dir = tempfile.gettempdir()
+        temp_file_path = os.path.join(temp_dir, "temp_current_image.png")
+        
+        # 打开图片并保存
+        image = Image.open(uploaded_image)
+        # 转换为 RGB 模式（如果是 RGBA 等）
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        # 保存为 PNG 格式
+        image.save(temp_file_path, format="PNG")
+        
+        return temp_file_path
+    except Exception as e:
+        st.error(f"❌ 图片保存失败: {str(e)}")
+        return None
 
 # --- 6. 处理用户输入 (移动端优化) ---
 # 处理快捷指令
@@ -940,7 +955,14 @@ if prompt:
         st.stop()
     
     # 检查是否有图片
-    has_image = st.session_state.image_base64 is not None
+    has_image = st.session_state.uploaded_image is not None
+    
+    # 保存图片为临时文件（如果上传了图片）
+    temp_image_path = None
+    if has_image:
+        temp_image_path = save_uploaded_image_to_temp(st.session_state.uploaded_image)
+        if not temp_image_path:
+            has_image = False  # 如果保存失败，视为没有图片
     
     # 添加用户消息
     user_message_content = prompt
@@ -954,22 +976,11 @@ if prompt:
 
     # 构建系统提示词（根据是否有文档选择不同策略）
     pdf_text = st.session_state.pdf_content
-    selected_model = st.session_state.get('selected_model', 'Qwen/Qwen2.5-7B-Instruct')
     
-    # 如果有图片，尝试使用支持视觉的模型
-    if has_image:
-        # 尝试使用视觉模型（如果用户有权限）
-        vision_models = [
-            "Qwen/Qwen2.5-VL-7B-Instruct",  # 视觉语言模型
-            "Qwen/Qwen2-VL-7B-Instruct",    # 备用视觉模型
-            "Qwen/Qwen2.5-7B-Instruct"      # 如果视觉模型不可用，回退到文本模型
-        ]
-        # 优先使用视觉模型
-        selected_model = vision_models[0]
-    
+    # 系统提示词优化：加入工业机器人维修专家角色和图片分析要求
     if pdf_text:
         # 有文档：基于文档回答
-        system_prompt = f"""你是一个专业的AI助手，擅长分析文档和回答问题。
+        system_prompt = f"""你是一名资深的工业机器人维修专家，擅长分析文档和诊断故障。
 
 【任务要求】：
 1. 严格基于以下文档内容回答问题，不要编造信息
@@ -978,15 +989,15 @@ if prompt:
 4. 如果问题超出文档范围，明确告知"文档中未提及此内容"，但可以基于你的知识提供一般性建议
 5. 对于故障排查类问题，请按步骤列出解决方案
 6. 回答要专业、准确、有帮助
-{"7. 如果用户上传了图片，请仔细分析图片内容，识别故障代码、错误信息、设备状态等，并结合文档内容给出诊断建议" if has_image else ""}
+{"7. **如果用户上传了图片，请优先分析图片中的错误代码、线缆状态或仪表盘读数**，识别故障代码、错误信息、设备状态等，并结合文档内容给出诊断建议" if has_image else ""}
 
 【文档内容】：
 {pdf_text[:8000]}
 
 请开始回答用户问题："""
     else:
-        # 无文档：通用AI助手
-        system_prompt = f"""你是一个智能AI助手，擅长回答各种问题。
+        # 无文档：工业机器人维修专家
+        system_prompt = f"""你是一名资深的工业机器人维修专家，擅长诊断各种工业设备故障。
 
 【任务要求】：
 1. 回答要准确、专业、有帮助
@@ -996,93 +1007,82 @@ if prompt:
 5. 对于代码问题，提供可运行的代码示例
 6. 如果涉及法律法规，确保回答符合相关法规要求
 7. 如果不知道答案，诚实告知，不要编造信息
-{"8. 如果用户上传了图片，请仔细分析图片内容，识别故障代码、错误信息、设备状态等，并给出专业的诊断建议和解决方案" if has_image else ""}
+{"8. **如果用户上传了图片，请优先分析图片中的错误代码、线缆状态或仪表盘读数**，识别故障代码、错误信息、设备状态等，并给出专业的诊断建议和解决方案" if has_image else ""}
 
 请用专业、友好的方式回答用户问题。"""
 
-    # 构建消息列表
-    messages_for_api = [{"role": "system", "content": system_prompt}]
-    
-    # 添加历史消息（除了最后一条用户消息，因为我们要重新构建它）
-    for msg in st.session_state.messages[:-1]:
-        messages_for_api.append(msg)
-    
-    # 构建最后一条用户消息（包含图片）
-    last_user_message = {"role": "user", "content": []}
-    
-    # 添加文本内容
-    last_user_message["content"].append({
-        "type": "text",
-        "text": prompt
-    })
-    
-    # 如果有图片，添加图片内容
-    if has_image:
-        last_user_message["content"].append({
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:image/jpeg;base64,{st.session_state.image_base64}"
-            }
-        })
-    else:
-        # 如果没有图片，直接使用文本
-        last_user_message = {"role": "user", "content": prompt}
-    
-    messages_for_api.append(last_user_message)
-
-    # 调用AI API
+    # 调用 DashScope API
     try:
-        client = OpenAI(api_key=api_key, base_url="https://api.siliconflow.cn/v1")
-        
         with st.chat_message("assistant"):
             # 显示加载状态
-            model_display_name = selected_model.split('/')[-1]
+            model_display_name = "Qwen-VL-Max"
             spinner_text = f"🤔 {model_display_name} 正在分析中..."
             if has_image:
                 spinner_text = f"👁️ {model_display_name} 正在分析图片..."
             
             with st.spinner(spinner_text):
-                # 如果使用视觉模型失败，尝试回退到文本模型
-                try:
-                    stream = client.chat.completions.create(
-                        model=selected_model,
-                        messages=messages_for_api,
-                        stream=True,
-                        temperature=temperature,
-                    )
-                    response = st.write_stream(stream)
-                except Exception as vision_error:
-                    # 如果视觉模型不可用，且用户上传了图片，尝试使用文本模型并提示
-                    if has_image and ("Qwen2.5-VL" in selected_model or "Qwen2-VL" in selected_model):
-                        st.warning(f"⚠️ 视觉模型 {selected_model} 不可用，尝试使用文本模型分析。建议：如需图片分析功能，请使用支持视觉的模型（如 Qwen2.5-VL-7B-Instruct）。")
-                        # 回退到文本模型，但移除图片
-                        text_only_messages = []
-                        for msg in messages_for_api:
-                            if isinstance(msg.get("content"), list):
-                                # 过滤掉图片，只保留文本
-                                text_content = [item for item in msg["content"] if item.get("type") == "text"]
-                                if text_content:
-                                    text_only_messages.append({
-                                        "role": msg["role"],
-                                        "content": text_content[0].get("text", "")
-                                    })
-                            else:
-                                text_only_messages.append(msg)
-                        
-                        # 在提示词中添加图片描述请求
-                        if text_only_messages and text_only_messages[0].get("role") == "system":
-                            text_only_messages[0]["content"] += "\n\n注意：用户上传了一张图片，但由于当前模型不支持图片输入，请基于用户的问题描述进行分析。"
-                        
-                        stream = client.chat.completions.create(
-                            model="Qwen/Qwen2.5-7B-Instruct",
-                            messages=text_only_messages,
-                            stream=True,
-                            temperature=temperature,
-                        )
-                        response = st.write_stream(stream)
+                # 构建消息内容
+                user_content = []
+                
+                # 如果有图片，添加图片和文本
+                if has_image and temp_image_path:
+                    # 使用 file:// 协议指定本地文件路径
+                    user_content.append({'image': f'file://{temp_image_path}'})
+                    user_content.append({'text': prompt})
+                else:
+                    # 只有文本
+                    user_content.append({'text': prompt})
+                
+                # 构建消息列表（DashScope 格式）
+                messages = [
+                    {
+                        'role': 'system',
+                        'content': system_prompt
+                    },
+                    {
+                        'role': 'user',
+                        'content': user_content
+                    }
+                ]
+                
+                # 调用 DashScope MultiModalConversation API
+                # 流式调用
+                responses = dashscope.MultiModalConversation.call(
+                    model='qwen-vl-max',
+                    messages=messages,
+                    stream=True
+                )
+                
+                # 处理流式响应
+                response_text = ""
+                response_placeholder = st.empty()
+                
+                for response in responses:
+                    if response.status_code == HTTPStatus.OK:
+                        # 检查是否有内容
+                        if hasattr(response, 'output') and response.output:
+                            if 'choices' in response.output and len(response.output['choices']) > 0:
+                                choice = response.output['choices'][0]
+                                if 'message' in choice and 'content' in choice['message']:
+                                    content = choice['message']['content']
+                                    if isinstance(content, list):
+                                        # 内容可能是列表
+                                        for item in content:
+                                            if isinstance(item, dict) and 'text' in item:
+                                                response_text += item['text']
+                                    elif isinstance(content, str):
+                                        response_text += content
+                                    
+                                    # 实时更新显示
+                                    response_placeholder.markdown(response_text)
                     else:
-                        # 其他错误，直接抛出
-                        raise vision_error
+                        # 处理错误
+                        error_msg = f"请求失败，状态码: {response.status_code}"
+                        if hasattr(response, 'message'):
+                            error_msg += f", 错误信息: {response.message}"
+                        raise Exception(error_msg)
+                
+                response = response_text
         
         # 保存回复
         st.session_state.messages.append({"role": "assistant", "content": response})
@@ -1123,7 +1123,7 @@ if prompt:
                     'feedback': feedback,
                     'has_image': has_image,
                     'has_document': bool(pdf_text),
-                    'model': selected_model,
+                    'model': 'qwen-vl-max',
                     'timestamp': len(st.session_state.messages)
                 }
                 st.session_state.feedback_data.append(feedback_entry)
