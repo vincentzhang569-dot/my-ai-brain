@@ -17,10 +17,18 @@ except ImportError:
     DOCX_AVAILABLE = False
 
 # --- 硅基流动 API 配置 ---
-# Base URL 和 API Key 配置（硬编码）
+# Base URL 和 API Key 配置（从 Streamlit Secrets 读取）
 SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
-api_key = "sk-worqfxfyknjmcddfidxhrhygcqjfonoccuftukmorynwfbtf"
 SILICONFLOW_MODEL = "Qwen/Qwen2-VL-72B-Instruct"
+
+# 从 Streamlit Secrets 读取 API Key
+try:
+    api_key = st.secrets["SILICONFLOW_API_KEY"]
+except (FileNotFoundError, KeyError, AttributeError):
+    st.error("⚠️ 未找到 API Key，请检查配置！")
+    st.info("💡 请在 `.streamlit/secrets.toml` 文件中配置：\n```toml\nSILICONFLOW_API_KEY = \"sk-your-key-here\"\n```")
+    api_key = None
+    st.stop()
 
 # 初始化 OpenAI 客户端（用于调用硅基流动 API）
 @st.cache_resource
@@ -548,8 +556,28 @@ def generate_word_export(messages, doc_name=""):
     return buffer
 
 # --- 初始化状态 ---
+# System Prompt（工业机器人故障诊断专家）
+SYSTEM_PROMPT = """你是一位资深的工业机器人故障诊断专家。请根据用户提供的文字描述或报错图片进行诊断。
+
+输出格式要求：
+
+1. **故障分析**：简述可能的原因。
+
+2. **排查步骤**：分步骤列出检查点（如万用表测量哪里、检查哪根线缆）。
+
+3. **安全警告**：提示操作风险（如高压电、机械臂坠落风险）。"""
+
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "🤖 您好！我是您的AI智能助手。\n\n**快速开始：**\n1. 点击上方 ⚙️ **设置** 输入您的 SiliconFlow API Key\n2. （可选）上传 PDF 文档进行文档问答\n3. 开始提问！\n\n💡 **提示**：本网站不局限于工业问题。您可以先输入API Key直接提问，也可以上传文档后进行基于文档的问答。"}]
+    st.session_state.messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT
+        },
+        {
+            "role": "assistant",
+            "content": "🤖 您好！我是您的工业机器人故障诊断专家。\n\n**我可以帮您：**\n1. 分析故障代码和错误信息\n2. 诊断设备故障原因\n3. 提供详细的排查步骤\n4. 提醒安全操作注意事项\n\n**使用方式：**\n• 直接描述故障现象\n• 上传故障图片（我会分析错误代码、线缆状态、仪表盘读数等）\n• 上传技术手册进行基于文档的问答\n\n💡 请开始描述您遇到的故障问题！"
+        }
+    ]
 if "current_file" not in st.session_state:
     st.session_state.current_file = ""
 if "pdf_content" not in st.session_state:
@@ -630,8 +658,30 @@ with st.expander("⚙️ 设置", expanded=False):
     
     # 1. API Key 状态显示
     st.success(f"✅ API Key 已配置（前4位: {api_key[:4]}...）")
-    st.caption(f"📡 使用模型: {SILICONFLOW_MODEL}")
     
+    # 显示模型信息
+    st.markdown("**🧠 当前使用的模型**")
+    st.info("**Qwen2-VL-72B** (720亿参数)")
+    st.caption("强大的视觉语言模型，支持图片分析和故障诊断")
+    
+    st.divider()
+    
+    # 一键重置对话按钮
+    if st.button("🗑️ 开启新对话", use_container_width=True, help="清空当前对话历史，开始新的对话"):
+        st.session_state.messages = [
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT
+            },
+            {
+                "role": "assistant",
+                "content": "🤖 对话已重置，请开始新的故障诊断咨询。"
+            }
+        ]
+        st.session_state.uploaded_image = None
+        st.rerun()
+    
+    st.divider()
     
     # 2. 文件上传 (移动端优化)
     st.markdown("**📄 上传技术手册**")
@@ -888,39 +938,23 @@ if prompt:
     # 构建系统提示词（根据是否有文档选择不同策略）
     pdf_text = st.session_state.pdf_content
     
-    # 系统提示词优化：加入工业机器人维修专家角色和图片分析要求
+    # 使用基础 System Prompt，并根据文档情况增强
     if pdf_text:
         # 有文档：基于文档回答
-        system_prompt = f"""你是一名资深的工业机器人维修专家，擅长分析文档和诊断故障。
+        system_prompt = f"""{SYSTEM_PROMPT}
 
-【任务要求】：
-1. 严格基于以下文档内容回答问题，不要编造信息
-2. 回答要简洁明了，适合在手机上阅读
-3. 使用 Markdown 格式，关键信息用 **加粗** 标注
-4. 如果问题超出文档范围，明确告知"文档中未提及此内容"，但可以基于你的知识提供一般性建议
-5. 对于故障排查类问题，请按步骤列出解决方案
-6. 回答要专业、准确、有帮助
-{"7. **如果用户上传了图片，请优先分析图片中的错误代码、线缆状态或仪表盘读数**，识别故障代码、错误信息、设备状态等，并结合文档内容给出诊断建议" if has_image else ""}
+【文档分析模式】：
+- 严格基于以下文档内容回答问题，不要编造信息
+- 如果问题超出文档范围，明确告知"文档中未提及此内容"，但可以基于你的知识提供一般性建议
+- 结合文档内容和图片分析（如有）给出综合诊断
 
 【文档内容】：
 {pdf_text[:8000]}
 
-请开始回答用户问题："""
+请严格按照输出格式要求回答用户问题。"""
     else:
-        # 无文档：工业机器人维修专家
-        system_prompt = f"""你是一名资深的工业机器人维修专家，擅长诊断各种工业设备故障。
-
-【任务要求】：
-1. 回答要准确、专业、有帮助
-2. 使用简洁明了的语言，适合在手机上阅读
-3. 使用 Markdown 格式，关键信息用 **加粗** 标注
-4. 对于技术问题，提供详细的步骤说明
-5. 对于代码问题，提供可运行的代码示例
-6. 如果涉及法律法规，确保回答符合相关法规要求
-7. 如果不知道答案，诚实告知，不要编造信息
-{"8. **如果用户上传了图片，请优先分析图片中的错误代码、线缆状态或仪表盘读数**，识别故障代码、错误信息、设备状态等，并给出专业的诊断建议和解决方案" if has_image else ""}
-
-请用专业、友好的方式回答用户问题。"""
+        # 无文档：使用基础 System Prompt
+        system_prompt = SYSTEM_PROMPT
 
     # 调用硅基流动 API
     try:
@@ -952,8 +986,11 @@ if prompt:
                 # 构建消息列表（OpenAI 标准格式）
                 messages = [{"role": "system", "content": system_prompt}]
                 
-                # 添加历史消息（除了最后一条用户消息，因为我们要重新构建它）
+                # 添加历史消息（过滤掉 system 消息，因为我们已经添加了新的 system prompt）
                 for msg in st.session_state.messages[:-1]:
+                    # 跳过 system 消息
+                    if msg.get("role") == "system":
+                        continue
                     # 历史消息可能是简单格式或复杂格式
                     if isinstance(msg.get("content"), list):
                         # 如果已经是复杂格式，直接添加
