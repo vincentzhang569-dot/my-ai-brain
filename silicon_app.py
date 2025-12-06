@@ -552,6 +552,24 @@ if "uploaded_image" not in st.session_state:
 if "image_base64" not in st.session_state:
     st.session_state.image_base64 = None
 
+# 预设问题（Quick Prompts）- 工业现场快速提问
+QUICK_PROMPTS = [
+    "查伺服电机故障",
+    "查通讯超时",
+    "ABB 机器人错误代码大全",
+    "编码器故障排查",
+    "PLC 通讯异常"
+]
+
+# 预设问题（Quick Prompts）
+QUICK_PROMPTS = [
+    "查伺服电机故障",
+    "查通讯超时",
+    "ABB 机器人错误代码大全",
+    "编码器故障排查",
+    "PLC 通讯异常"
+]
+
 # --- 3. 界面布局 (移动端优化) ---
 
 # 顶部标题 (渐变色酷炫标题)
@@ -778,6 +796,26 @@ else:
         • 支持技术咨询、代码问题、学习辅导、生活问答等多种场景
     </div>
     """, unsafe_allow_html=True)
+
+# === 预设问题按钮 (Quick Prompts) - 工业现场快速提问 ===
+if st.session_state.get('api_key_input'):
+    st.markdown("**⚡ 快速提问（点击下方按钮）**")
+    
+    # 使用列布局显示预设问题按钮
+    # PC端：5个按钮并排；移动端：自动换行
+    prompt_cols = st.columns(5)
+    for idx, prompt_text in enumerate(QUICK_PROMPTS):
+        with prompt_cols[idx]:
+            if st.button(
+                prompt_text, 
+                key=f"quick_prompt_{idx}",
+                use_container_width=True,
+                help=f"快速提问：{prompt_text}"
+            ):
+                st.session_state.pending_quick_action = prompt_text
+                st.rerun()
+    
+    st.markdown("---")
 
 # === 快捷指令按钮 (工业现场一键操作) ===
 # 只有在有文档时才显示快捷指令
