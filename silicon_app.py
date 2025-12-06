@@ -1,4 +1,12 @@
 import streamlit as st
+import dashscope
+
+# 它会自动去读 secrets.toml (本地) 或者 Secrets 设置 (云端)
+try:
+    dashscope.api_key = st.secrets["DASHSCOPE_API_KEY"]
+except FileNotFoundError:
+    st.error("未找到 API Key，请检查配置！")
+
 import pdfplumber
 from datetime import datetime
 from io import BytesIO
@@ -8,7 +16,6 @@ import base64
 import os
 import tempfile
 from PIL import Image
-import dashscope
 from http import HTTPStatus
 try:
     from docx import Document
@@ -578,13 +585,13 @@ st.markdown('<p class="mobile-header">🏭 INDUSTRIAL AI BRAIN</p>', unsafe_allo
 
 # === 设置面板 (移动端友好的折叠设计) ===
 # 只检查API Key，不强制要求文档
-show_expander = not st.session_state.get('api_key_input')
+show_expander = not dashscope.api_key
 
 with st.expander("⚙️ 设置", expanded=show_expander):
     # 状态指示器
     status_col1, status_col2, status_col3 = st.columns(3)
     with status_col1:
-        api_status = "✅" if st.session_state.get('api_key_input') else "❌"
+        api_status = "✅" if dashscope.api_key else "❌"
         st.caption(f"API Key: {api_status}")
     with status_col2:
         doc_status = "✅" if st.session_state.pdf_content else "⭕"
@@ -619,93 +626,16 @@ with st.expander("⚙️ 设置", expanded=show_expander):
     
     st.divider()
     
-    # 1. API Key 输入（支持自动保存和恢复）
-    api_key = st.text_input(
-        "🔑 DashScope API Key", 
-        type="password", 
-        key="api_key_input",
-        placeholder="请输入 DashScope API Key",
-        help="在阿里云 DashScope 控制台获取您的 API Key（输入后会自动保存到浏览器，刷新页面不会丢失）"
-    )
+    # 1. API Key 状态显示（从 secrets 读取，无需手动输入）
+    st.info("🔑 API Key 已从配置文件读取（无需手动输入）")
+    st.caption("💡 如需修改 API Key，请在 `.streamlit/secrets.toml` 文件中配置 `DASHSCOPE_API_KEY`")
     
-    # 设置 DashScope API Key
-    if api_key:
-        dashscope.api_key = api_key
+    # 显示当前 API Key 状态
+    if dashscope.api_key:
+        st.success(f"✅ API Key 已配置（前4位: {dashscope.api_key[:4]}...）")
+    else:
+        st.warning("⚠️ 请配置 DASHSCOPE_API_KEY（在 `.streamlit/secrets.toml` 文件中）")
     
-    # 自动保存API Key到localStorage
-    if api_key:
-        # 转义特殊字符以避免JavaScript错误
-        escaped_key = api_key.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
-        st.markdown(f"""
-        <script>
-        (function() {{
-            try {{
-                const currentKey = '{escaped_key}';
-                const savedKey = localStorage.getItem('industrial_ai_api_key');
-                if (currentKey && currentKey !== savedKey) {{
-                    localStorage.setItem('industrial_ai_api_key', currentKey);
-                }}
-            }} catch(e) {{
-                console.error('保存API Key失败:', e);
-            }}
-        }})();
-        </script>
-        """, unsafe_allow_html=True)
-    
-    # 恢复按钮（如果localStorage有值但输入框为空）
-    if not api_key:
-        # 检查是否有保存的API Key
-        st.markdown("""
-        <script>
-        (function() {
-            const savedKey = localStorage.getItem('industrial_ai_api_key');
-            if (savedKey) {
-                // 在页面上显示提示
-                const hint = document.createElement('div');
-                hint.style.cssText = 'margin-top: 8px; padding: 8px; background: #e3f2fd; border-radius: 6px; font-size: 12px; color: #1976d2;';
-                hint.innerHTML = '💡 检测到您之前保存过API Key，点击下方按钮快速恢复';
-                const input = document.querySelector('input[type="password"][placeholder*="sk-"]');
-                if (input && input.parentElement) {
-                    input.parentElement.appendChild(hint);
-                }
-            }
-        })();
-        </script>
-        """, unsafe_allow_html=True)
-        
-        if st.button("🔄 恢复上次保存的 API Key", use_container_width=True, help="从浏览器缓存中恢复上次输入的API Key"):
-            # 使用JavaScript读取并尝试填充
-            st.markdown("""
-            <script>
-            (function() {
-                const savedKey = localStorage.getItem('industrial_ai_api_key');
-                if (savedKey) {
-                    // 找到API Key输入框
-                    const inputs = document.querySelectorAll('input[type="password"]');
-                    let found = false;
-                    inputs.forEach(input => {
-                        const placeholder = input.getAttribute('placeholder') || '';
-                        if (placeholder.includes('sk-') && !input.value) {
-                            input.value = savedKey;
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                            input.dispatchEvent(new Event('change', { bubbles: true }));
-                            found = true;
-                        }
-                    });
-                    if (found) {
-                        // 延迟刷新以确保值已设置
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 300);
-                    } else {
-                        alert('未找到API Key输入框，请手动输入');
-                    }
-                } else {
-                    alert('没有找到保存的API Key');
-                }
-            })();
-            </script>
-            """, unsafe_allow_html=True)
     
     # 2. 文件上传 (移动端优化)
     st.markdown("**📄 上传技术手册**")
@@ -774,7 +704,7 @@ with st.expander("⚙️ 设置", expanded=show_expander):
         </script>
         """, unsafe_allow_html=True)
         # 清除session_state
-        st.session_state.api_key_input = ""
+        # API Key 现在从 secrets 读取，无需清除
         st.session_state.pdf_content = ""
         st.session_state.current_file = ""
         st.session_state.doc_hash = ""
@@ -806,8 +736,8 @@ with st.expander("⚙️ 设置", expanded=show_expander):
 # --- 4. 聊天区域 (移动端优化) ---
 
 # 动态状态提示
-if not st.session_state.get('api_key_input'):
-    st.warning("⚠️ 请先在设置中输入 API Key 以开始使用")
+if not dashscope.api_key:
+    st.warning("⚠️ 请配置 DASHSCOPE_API_KEY 以开始使用（在 `.streamlit/secrets.toml` 文件中）")
 else:
     if st.session_state.pdf_content:
         st.success("✅ 一切就绪！您可以基于文档提问，也可以直接提问任何问题。")
@@ -826,7 +756,7 @@ else:
     """, unsafe_allow_html=True)
 
 # === 预设问题按钮 (Quick Prompts) - 工业现场快速提问 ===
-if st.session_state.get('api_key_input'):
+if dashscope.api_key:
     st.markdown("**⚡ 快速提问（点击下方按钮）**")
     
     # 使用列布局显示预设问题按钮
@@ -950,8 +880,8 @@ if user_input:
 
 if prompt:
     # 验证配置（只检查API Key）
-    if not api_key:
-        st.toast("⚠️ 请先在设置中输入 API Key", icon="⚠️")
+    if not dashscope.api_key:
+        st.toast("⚠️ 请配置 DASHSCOPE_API_KEY", icon="⚠️")
         st.stop()
     
     # 检查是否有图片
