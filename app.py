@@ -364,6 +364,11 @@ st.markdown("""
         font-weight: 700 !important;
     }
     
+    /* 减少设置标题下方的空白，让诊断模式紧贴 */
+    [data-testid="stSidebar"] h2 {
+        margin-bottom: 0.5rem !important;
+    }
+    
     /* 按钮、输入框、上传区域保持正常颜色（不覆盖） */
     [data-testid="stSidebar"] button,
     [data-testid="stSidebar"] button *,
@@ -679,7 +684,19 @@ st.markdown('<p class="mobile-header">🏭 INDUSTRIAL AI BRAIN<br><span class="s
 with st.sidebar:
     st.header("⚙️ 设置")
     
-    # 恢复保存的状态（仅在首次加载时）
+    # --- 1. 诊断模式（紧贴设置标题） ---
+    st.markdown("**🧠 诊断模式**")
+    st.toggle("开启专家深度思考模式", key="deep_think_mode")
+    
+    # 简单的状态显示
+    if st.session_state.deep_think_mode:
+        st.markdown("状态：**已开启**")
+    else:
+        st.markdown("状态：**已关闭**")
+    
+    st.divider()
+    
+    # 恢复保存的状态（仅在首次加载时，放在诊断模式后面不影响布局）
     if not st.session_state.restored_from_cache:
         # 使用JavaScript读取localStorage并设置到session_state
         st.markdown("""
@@ -703,20 +720,6 @@ with st.sidebar:
         </script>
         """, unsafe_allow_html=True)
         st.session_state.restored_from_cache = True
-    
-    st.divider()
-    
-    # --- 1. 诊断模式 ---
-    st.markdown("**🧠 诊断模式**")
-    st.toggle("开启专家深度思考模式", key="deep_think_mode")
-    
-    # 简单的状态显示
-    if st.session_state.deep_think_mode:
-        st.markdown("状态：**已开启**")
-    else:
-        st.markdown("状态：**已关闭**")
-    
-    st.divider()
     
     # --- 2. 文件上传 ---
     st.markdown("**📄 上传技术手册**")
