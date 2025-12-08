@@ -7,8 +7,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)](https://streamlit.io/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-
-🌐 **[在线体验](https://my-ai-brain-ngxgc6mxyspvxsj5adqdyw.streamlit.app/)**
+[![在线体验](https://img.shields.io/badge/在线体验-Live-brightgreen.svg)](https://my-ai-brain-ngxgc6mxyspvxsj5adqdyw.streamlit.app/)
 
 </div>
 
