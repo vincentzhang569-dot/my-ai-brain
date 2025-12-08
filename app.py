@@ -54,6 +54,13 @@ st.markdown("""
             margin-bottom: 0.8rem;
         }
         
+        .subtitle {
+            font-size: 1rem !important; /* 移动端中文大小 */
+            font-weight: 600;
+            display: block;
+            margin-top: 5px;
+        }
+        
         /* 聊天消息气泡优化 */
         .stChatMessage {
             border-radius: 18px;
@@ -159,7 +166,7 @@ st.markdown("""
         }
     }
     
-    /* ========== PC端保持宽屏体验 ========== */
+    /* PC端保持宽屏体验 */
     @media (min-width: 769px) {
         .block-container {
             padding-top: 2rem;
@@ -168,7 +175,15 @@ st.markdown("""
         }
         
         .mobile-header {
-            font-size: 2.2rem;
+            font-size: 2.8rem; /* PC端英文更大 */
+        }
+
+        .subtitle {
+            font-size: 1.8rem; /* PC端中文更大 */
+            font-weight: 700;
+            display: block;
+            margin-top: 10px;
+            letter-spacing: 2px;
         }
         
         /* PC端文件上传器优化 - 防止文字重叠 */
@@ -423,54 +438,26 @@ st.markdown("""
 <script>
 // 防止页面加载时自动滚动到底部
 (function() {
-    // 保存当前滚动位置
-    let savedScrollPosition = window.pageYOffset || document.documentElement.scrollTop;
-    
-    // 页面加载完成后，恢复到顶部
-    window.addEventListener('load', function() {
+    // 强制滚动到顶部
+    function forceScrollTop() {
         window.scrollTo(0, 0);
-        savedScrollPosition = 0;
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+    }
+
+    // 页面加载完成后，多次尝试恢复到顶部
+    window.addEventListener('load', function() {
+        forceScrollTop();
+        // 针对 Streamlit 慢加载，多次尝试
+        setTimeout(forceScrollTop, 100);
+        setTimeout(forceScrollTop, 500);
+        setTimeout(forceScrollTop, 1000);
     });
     
-    // 防止Streamlit自动滚动
-    const observer = new MutationObserver(function(mutations) {
-        // 如果检测到内容变化，但用户没有主动滚动，则保持在顶部
-        const currentScroll = window.pageYOffset || document.documentElement.scrollTop;
-        if (currentScroll > 100 && savedScrollPosition < 50) {
-            // 如果突然跳到底部，可能是自动滚动，恢复到顶部
-            window.scrollTo(0, 0);
-        }
-        savedScrollPosition = currentScroll;
-    });
-    
-    // 观察DOM变化
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
-    
-    // 监听用户滚动，更新保存的位置
-    let scrollTimeout;
-    window.addEventListener('scroll', function() {
-        clearTimeout(scrollTimeout);
-        scrollTimeout = setTimeout(function() {
-            savedScrollPosition = window.pageYOffset || document.documentElement.scrollTop;
-        }, 100);
-    });
-    
-    // 防止展开设置面板时自动滚动
-    document.addEventListener('click', function(e) {
-        // 检查是否点击了展开/折叠按钮
-        if (e.target.closest('.streamlit-expanderHeader')) {
-            setTimeout(function() {
-                const currentScroll = window.pageYOffset || document.documentElement.scrollTop;
-                if (currentScroll > 200) {
-                    // 如果展开后跳到底部，恢复到顶部
-                    window.scrollTo(0, 0);
-                }
-            }, 100);
-        }
-    });
+    // 如果是首次加载（没有之前的滚动位置），强制回顶
+    if (history.scrollRestoration) {
+        history.scrollRestoration = 'manual';
+    }
 })();
 </script>
 """, unsafe_allow_html=True)
@@ -671,7 +658,7 @@ QUICK_PROMPTS = [
 # --- 3. 界面布局 (移动端优化) ---
 
 # 顶部标题 (渐变色酷炫标题)
-st.markdown('<p class="mobile-header">🏭 INDUSTRIAL AI BRAIN<br><span style="font-size: 0.5em; font-weight: 600;">工业人工智能大脑</span></p>', unsafe_allow_html=True)
+st.markdown('<p class="mobile-header">🏭 INDUSTRIAL AI BRAIN<br><span class="subtitle">工业人工智能大脑</span></p>', unsafe_allow_html=True)
 
 # === 设置面板 (移动端友好的折叠设计) ===
 with st.expander("⚙️ 设置", expanded=False):
