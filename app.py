@@ -833,13 +833,6 @@ with st.sidebar:
 
 # --- 4. 聊天区域 (移动端优化) ---
 
-# 欢迎消息提示
-st.markdown("""
-<div style="background: #f0f7ff; padding: 12px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #667eea;">
-    <strong>🤖 您好！我是您的工业机器人故障诊断专家，请在侧边栏上传故障图片/PDF技术文档，我可以基于图片和文档内容进行回答，您也可以直接开始提问。</strong>
-</div>
-""", unsafe_allow_html=True)
-
 # === 预设问题按钮 (Quick Prompts) - 工业现场快速提问 ===
 st.markdown("**⚡ 快速提问（点击下方按钮）**")
 
