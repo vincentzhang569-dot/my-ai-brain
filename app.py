@@ -343,27 +343,38 @@ st.markdown("""
         text-align: center;
     }
     
-    /* 侧边栏字体与颜色终极优化 */
-    [data-testid="stSidebar"] * {
+    /* 侧边栏字体与颜色精确优化 - 只让文字变白，按钮/输入框保持正常 */
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] div[class*="markdown"],
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] .stMarkdown p,
+    [data-testid="stSidebar"] .stMarkdown div {
         font-size: 16px !important;
-        color: #ffffff !important; /* 强制全白 */
+        color: #ffffff !important; /* 文字变白 */
         font-weight: 500;
     }
     
-    /* 针对特定元素的微调 */
-    [data-testid="stSidebar"] h1, 
-    [data-testid="stSidebar"] h2, 
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
     [data-testid="stSidebar"] h3 {
-        color: #ffffff !important;
         font-weight: 700 !important;
     }
     
-    /* 修复输入框/按钮内部文字颜色，防止被全白覆盖导致看不清 */
-    [data-testid="stSidebar"] button div {
-        color: inherit !important; 
-    }
-    [data-testid="stSidebar"] input {
-        color: #333 !important; /* 输入框文字要深色 */
+    /* 按钮、输入框、上传区域保持正常颜色（不覆盖） */
+    [data-testid="stSidebar"] button,
+    [data-testid="stSidebar"] button *,
+    [data-testid="stSidebar"] input,
+    [data-testid="stSidebar"] .stFileUploader,
+    [data-testid="stSidebar"] .stFileUploader *,
+    [data-testid="stSidebar"] .stSuccess,
+    [data-testid="stSidebar"] .stSuccess *,
+    [data-testid="stSidebar"] .stInfo,
+    [data-testid="stSidebar"] .stInfo * {
+        color: inherit !important; /* 保持默认颜色 */
     }
 </style>
 """, unsafe_allow_html=True)
@@ -668,13 +679,6 @@ st.markdown('<p class="mobile-header">🏭 INDUSTRIAL AI BRAIN<br><span class="s
 with st.sidebar:
     st.header("⚙️ 设置")
     
-    # 状态指示器
-    st.caption(f"API Key: ✅")
-    doc_status = "✅" if st.session_state.pdf_content else "⭕"
-    st.caption(f"文档: {doc_status}")
-    model_name = SILICONFLOW_MODEL.split('/')[-1]
-    st.caption(f"模型: {model_name}")
-    
     # 恢复保存的状态（仅在首次加载时）
     if not st.session_state.restored_from_cache:
         # 使用JavaScript读取localStorage并设置到session_state
@@ -702,48 +706,19 @@ with st.sidebar:
     
     st.divider()
     
-# --- 新增：深度思考开关 ---
+    # --- 1. 诊断模式 ---
     st.markdown("**🧠 诊断模式**")
-    
-    # ✅ 核心修改：使用 key="deep_think_mode" 自动绑定状态，去掉 value=... 和手动赋值
     st.toggle("开启专家深度思考模式", key="deep_think_mode")
     
-    # 直接判断绑定好的状态
+    # 简单的状态显示
     if st.session_state.deep_think_mode:
-        st.info("已开启：AI 将进行原理级分析，响应时间稍长。")
+        st.markdown("状态：**已开启**")
     else:
-        st.caption("当前：极速响应模式，只给排查步骤。")
-    
-    st.divider()
-
-    # 1. API Key 状态显示（已清理：不显示任何敏感信息）
-    st.success("✅ API Key 已配置")
-    
-    # 显示模型信息
-    st.markdown("**🧠 当前使用的模型**")
-    st.info("**Qwen2-VL-72B** (720亿参数)")
-    st.caption("强大的视觉语言模型，支持图片分析和故障诊断")
+        st.markdown("状态：**已关闭**")
     
     st.divider()
     
-    # 一键重置对话按钮
-    if st.button("🗑️ 开启新对话", use_container_width=True, help="清空当前对话历史，开始新的对话"):
-        st.session_state.messages = [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT
-            },
-            {
-                "role": "assistant",
-                "content": "🤖 对话已重置，请开始新的故障诊断咨询。"
-            }
-        ]
-        st.session_state.uploaded_image = None
-        st.rerun()
-    
-    st.divider()
-    
-    # 2. 文件上传 (移动端优化)
+    # --- 2. 文件上传 ---
     st.markdown("**📄 上传技术手册**")
     uploaded_file = st.file_uploader(
         "支持 PDF 格式", 
@@ -753,13 +728,11 @@ with st.sidebar:
     
     # 显示文档信息
     if st.session_state.pdf_content:
-        doc_length = len(st.session_state.pdf_content)
-        st.success(f"📚 当前文档: **{st.session_state.current_file}**")
-        st.caption(f"📊 文档大小: {doc_length:,} 字符 | 约 {doc_length//1000}K tokens")
+        st.success(f"✅ 已加载: {st.session_state.current_file}")
     
-    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    # 3. 图片上传组件（侧边栏）
+    # --- 3. 图片上传 ---
     st.markdown("**📷 上传故障图片**")
     uploaded_image = st.file_uploader(
         "支持 PNG、JPG 格式",
@@ -772,47 +745,30 @@ with st.sidebar:
     if uploaded_image is not None:
         try:
             image = Image.open(uploaded_image)
-            st.image(image, caption="上传的图片", use_container_width=True)
+            st.image(image, caption="预览图", use_container_width=True)
             st.session_state.uploaded_image = uploaded_image
             st.success("✅ 图片已上传")
         except Exception as e:
-            st.error(f"❌ 图片处理失败: {str(e)}")
+            st.error(f"❌ 图片处理失败")
             st.session_state.uploaded_image = None
     else:
         st.session_state.uploaded_image = None
     
     st.divider()
     
-    # 4. 高级设置 (移动端紧凑布局)
-    st.markdown("**⚙️ 高级设置**")
-    temperature = st.slider(
-        "🎨 创造力 (Temperature)", 
-        0.0, 1.0, 0.3,
-        help="数值越低越严谨，数值越高越有创造性"
-    )
-
-    st.markdown("<br>", unsafe_allow_html=True)  # 对齐按钮
-    if st.button("🗑️ 清空对话", use_container_width=True, help="清空所有对话记录"):
-        st.session_state.messages = [{"role": "assistant", "content": "🤖 对话历史已清空，请重新提问。"}]
-        st.rerun()
-    
-    # 清除缓存按钮
-    st.markdown("---")
-    if st.button("🗑️ 清除所有保存的状态", use_container_width=True, help="清除浏览器中保存的所有缓存数据"):
-        st.markdown("""
-        <script>
-        if (window.IndustrialAIStorage) {
-            window.IndustrialAIStorage.clearSavedState();
-            alert('缓存已清除！');
-        }
-        </script>
-        """, unsafe_allow_html=True)
-        # 清除session_state
-        # API Key 现在从 secrets 读取，无需清除
-        st.session_state.pdf_content = ""
-        st.session_state.current_file = ""
-        st.session_state.doc_hash = ""
-        st.session_state.messages = [{"role": "assistant", "content": "🤖 所有状态已清除，请重新配置。"}]
+    # --- 4. 清空对话按钮 ---
+    if st.button("🗑️ 清空对话", use_container_width=True):
+        st.session_state.messages = [
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT
+            },
+            {
+                "role": "assistant",
+                "content": "🤖 对话已重置，请开始新的故障诊断咨询。"
+            }
+        ]
+        st.session_state.uploaded_image = None
         st.rerun()
 
     # 处理文件读取
@@ -833,8 +789,7 @@ with st.sidebar:
                 }}
                 </script>
                 """, unsafe_allow_html=True)
-            st.success(f"✅ 文档加载成功: **{uploaded_file.name}**")
-            st.info("💾 状态已自动保存，刷新页面后不会丢失（API Key和文档信息）")
+            st.success(f"✅ 文档加载成功")
             st.balloons()  # 成功提示动画
 
 # --- 4. 聊天区域 (移动端优化) ---
