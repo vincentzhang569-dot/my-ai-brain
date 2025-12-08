@@ -356,6 +356,7 @@ pip install -r requirements.txt
 **vincentzhang569-dot**
 
 - GitHub: [@vincentzhang569-dot](https://github.com/vincentzhang569-dot)
+- Email: vincentzhang569@gmail.com
 - 项目地址: [my-ai-brain](https://github.com/vincentzhang569-dot/my-ai-brain)
 
 ---
