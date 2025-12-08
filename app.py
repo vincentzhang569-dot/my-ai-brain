@@ -645,7 +645,7 @@ if "messages" not in st.session_state:
         },
         {
             "role": "assistant",
-            "content": "🤖 您好！我是您的工业机器人故障诊断专家，可以帮您分析故障代码、诊断设备问题、提供排查步骤。请开始描述您遇到的故障问题！"
+            "content": "🤖 您好！我是您的工业机器人故障诊断专家，请在侧边栏上传故障图片/PDF技术文档，我可以基于图片和文档内容进行回答，您也可以直接开始提问。"
         }
     ]
 if "current_file" not in st.session_state:
@@ -759,7 +759,43 @@ with st.sidebar:
     
     st.divider()
     
-    # --- 4. 清空对话按钮 ---
+    # --- 4. 导出对话记录和清空对话 ---
+    if len(st.session_state.messages) > 1:  # 至少有用户和AI的对话
+        st.markdown("**💾 导出对话记录**")
+        
+        # Markdown下载
+        md_content = generate_markdown_export(
+            st.session_state.messages, 
+            st.session_state.current_file
+        )
+        st.download_button(
+            label="📄 下载 Markdown",
+            data=md_content,
+            file_name=f"对话记录_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+            mime="text/markdown",
+            use_container_width=True,
+            help="下载为Markdown格式"
+        )
+        
+        # Word下载
+        if DOCX_AVAILABLE:
+            word_buffer = generate_word_export(
+                st.session_state.messages,
+                st.session_state.current_file
+            )
+            if word_buffer:
+                st.download_button(
+                    label="📝 下载 Word",
+                    data=word_buffer,
+                    file_name=f"对话记录_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True,
+                    help="下载为Word格式"
+                )
+        
+        st.divider()
+    
+    # 清空对话按钮
     if st.button("🗑️ 清空对话", use_container_width=True):
         st.session_state.messages = [
             {
@@ -797,10 +833,10 @@ with st.sidebar:
 
 # --- 4. 聊天区域 (移动端优化) ---
 
-# 整合的使用提示（放在设置面板下面）
+# 欢迎消息提示
 st.markdown("""
 <div style="background: #f0f7ff; padding: 12px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #667eea;">
-    <strong>💡 使用提示：</strong> 本网站不局限于工业问题，可以直接提问，也可以上传文档后进行基于文档的问答。支持技术咨询、代码问题、学习辅导、生活问答等多种场景。
+    <strong>🤖 您好！我是您的工业机器人故障诊断专家，请在侧边栏上传故障图片/PDF技术文档，我可以基于图片和文档内容进行回答，您也可以直接开始提问。</strong>
 </div>
 """, unsafe_allow_html=True)
 
@@ -853,46 +889,6 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# === 对话记录下载功能 ===
-if len(st.session_state.messages) > 1:  # 至少有用户和AI的对话
-    st.divider()
-    st.markdown("**💾 导出对话记录**")
-    
-    download_col1, download_col2 = st.columns(2)
-    
-    with download_col1:
-        # Markdown下载
-        md_content = generate_markdown_export(
-            st.session_state.messages, 
-            st.session_state.current_file
-        )
-        st.download_button(
-            label="📄 下载 Markdown",
-            data=md_content,
-            file_name=f"对话记录_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-            mime="text/markdown",
-            use_container_width=True,
-            help="下载为Markdown格式，适合文档管理"
-        )
-    
-    with download_col2:
-        # Word下载
-        if DOCX_AVAILABLE:
-            word_buffer = generate_word_export(
-                st.session_state.messages,
-                st.session_state.current_file
-            )
-            if word_buffer:
-                st.download_button(
-                    label="📝 下载 Word",
-                    data=word_buffer,
-                    file_name=f"对话记录_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    use_container_width=True,
-                    help="下载为Word格式，适合工单汇报"
-                )
-        else:
-            st.info("💡 安装 python-docx 以支持Word导出\n`pip install python-docx`", icon="ℹ️")
 
 # --- 5. 图片处理函数 ---
 def image_to_base64(image):
