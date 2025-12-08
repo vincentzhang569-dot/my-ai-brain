@@ -433,28 +433,77 @@ st.markdown(f"""
 </script>
 """, unsafe_allow_html=True)
 
-# --- 防止自动滚动到底部 ---
+# --- 防止自动滚动到底部 (终极修复版) ---
 st.markdown("""
 <script>
-// 防止页面加载时自动滚动到底部
 (function() {
-    // 强制滚动到顶部
-    function forceScrollTop() {
+    // 1. 移动端加载：物理禁止滚动 1.5秒，强制锁定在顶部
+    // 这是一个简单粗暴但有效的方法，防止 Streamlit 初始化时的自动跳转
+    if (window.innerWidth < 768) {
+        // 保存原始 overflow 样式
+        const originalOverflow = document.body.style.overflow;
+        
+        // 强制禁止滚动
+        document.body.style.overflow = 'hidden';
         window.scrollTo(0, 0);
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
+        
+        // 1.5秒后恢复，期间反复强制回顶
+        let lockTimer = setInterval(() => {
+            window.scrollTo(0, 0);
+        }, 50);
+        
+        setTimeout(() => {
+            clearInterval(lockTimer);
+            document.body.style.overflow = originalOverflow;
+        }, 1500);
     }
 
-    // 页面加载完成后，多次尝试恢复到顶部
-    window.addEventListener('load', function() {
-        forceScrollTop();
-        // 针对 Streamlit 慢加载，多次尝试
-        setTimeout(forceScrollTop, 100);
-        setTimeout(forceScrollTop, 500);
-        setTimeout(forceScrollTop, 1000);
-    });
+    // 2. PC端 Expander 展开：劫持点击和滚动行为
+    // 解决“打开设置来回跳转抖动”的问题
+    let currentScrollY = 0;
     
-    // 如果是首次加载（没有之前的滚动位置），强制回顶
+    // 监听所有点击事件（捕获阶段），专门针对 Expander
+    document.addEventListener('click', function(e) {
+        // 检查是否点击了 Streamlit 的 Expander 头部
+        const expanderHeader = e.target.closest('.streamlit-expanderHeader');
+        if (expanderHeader) {
+            // 记录当前滚动位置
+            currentScrollY = window.scrollY;
+            
+            // 在接下来 500ms 内，如果发生滚动，强制恢复到点击时的位置
+            // 这一步是为了对抗 Streamlit 内部的自动 scrollIntoView
+            const preventScroll = () => {
+                if (Math.abs(window.scrollY - currentScrollY) > 10) {
+                    window.scrollTo(window.scrollX, currentScrollY);
+                }
+            };
+            
+            // 密集执行恢复操作
+            for (let i = 0; i < 20; i++) {
+                setTimeout(preventScroll, i * 30); // 每30ms检查一次，持续600ms
+            }
+        }
+    }, true);
+
+    // 3. 终极防御：劫持 scrollIntoView
+    // Streamlit 内部大量使用此 API 来实现自动跳转
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function(arg) {
+        // 检查调用者是否在 Expander 内容中
+        // 如果是 Expander 内部元素请求滚动，则拦截
+        const insideExpander = this.closest('.streamlit-expanderContent');
+        
+        if (insideExpander) {
+            // 拦截！不做任何操作，从而阻止跳转
+            // console.log('拦截了 Expander 内部的自动滚动');
+            return;
+        }
+        
+        // 其他情况（如聊天发送后滚动到底部）保持原样
+        originalScrollIntoView.apply(this, arguments);
+    };
+
+    // 4. 也是强制回顶的补充（针对非移动端）
     if (history.scrollRestoration) {
         history.scrollRestoration = 'manual';
     }
