@@ -342,6 +342,18 @@ st.markdown("""
         border-radius: 12px;
         text-align: center;
     }
+    
+    /* 侧边栏字体放大 */
+    [data-testid="stSidebar"] label {
+        font-size: 16px !important;
+        font-weight: 600 !important;
+    }
+    [data-testid="stSidebar"] .stMarkdown p {
+        font-size: 16px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+        font-size: 16px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
