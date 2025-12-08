@@ -418,6 +418,63 @@ st.markdown(f"""
 </script>
 """, unsafe_allow_html=True)
 
+# --- 防止自动滚动到底部 ---
+st.markdown("""
+<script>
+// 防止页面加载时自动滚动到底部
+(function() {
+    // 保存当前滚动位置
+    let savedScrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+    
+    // 页面加载完成后，恢复到顶部
+    window.addEventListener('load', function() {
+        window.scrollTo(0, 0);
+        savedScrollPosition = 0;
+    });
+    
+    // 防止Streamlit自动滚动
+    const observer = new MutationObserver(function(mutations) {
+        // 如果检测到内容变化，但用户没有主动滚动，则保持在顶部
+        const currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+        if (currentScroll > 100 && savedScrollPosition < 50) {
+            // 如果突然跳到底部，可能是自动滚动，恢复到顶部
+            window.scrollTo(0, 0);
+        }
+        savedScrollPosition = currentScroll;
+    });
+    
+    // 观察DOM变化
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+    
+    // 监听用户滚动，更新保存的位置
+    let scrollTimeout;
+    window.addEventListener('scroll', function() {
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(function() {
+            savedScrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+        }, 100);
+    });
+    
+    // 防止展开设置面板时自动滚动
+    document.addEventListener('click', function(e) {
+        // 检查是否点击了展开/折叠按钮
+        if (e.target.closest('.streamlit-expanderHeader')) {
+            setTimeout(function() {
+                const currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+                if (currentScroll > 200) {
+                    // 如果展开后跳到底部，恢复到顶部
+                    window.scrollTo(0, 0);
+                }
+            }, 100);
+        }
+    });
+})();
+</script>
+""", unsafe_allow_html=True)
+
 # --- 核心函数：读取PDF ---
 def read_pdf_text(uploaded_file) -> str:
     text_parts = []
@@ -581,7 +638,7 @@ if "messages" not in st.session_state:
         },
         {
             "role": "assistant",
-            "content": "🤖 您好！我是您的工业机器人故障诊断专家。\n\n**我可以帮您：**\n1. 分析故障代码和错误信息\n2. 诊断设备故障原因\n3. 提供详细的排查步骤\n4. 提醒安全操作注意事项\n\n**使用方式：**\n• 直接描述故障现象\n• 点击上方设置页面上传故障图片和技术手册（我会分析错误代码、线缆状态、仪表盘读数等）\n\n💡 请开始描述您遇到的故障问题！"
+            "content": "🤖 您好！我是您的工业机器人故障诊断专家，可以帮您分析故障代码、诊断设备问题、提供排查步骤。请开始描述您遇到的故障问题！"
         }
     ]
 if "current_file" not in st.session_state:
@@ -614,7 +671,7 @@ QUICK_PROMPTS = [
 # --- 3. 界面布局 (移动端优化) ---
 
 # 顶部标题 (渐变色酷炫标题)
-st.markdown('<p class="mobile-header">🏭 INDUSTRIAL AI BRAIN</p>', unsafe_allow_html=True)
+st.markdown('<p class="mobile-header">🏭 INDUSTRIAL AI BRAIN<br><span style="font-size: 0.5em; font-weight: 600;">工业人工智能大脑</span></p>', unsafe_allow_html=True)
 
 # === 设置面板 (移动端友好的折叠设计) ===
 with st.expander("⚙️ 设置", expanded=False):
@@ -795,20 +852,10 @@ with st.expander("⚙️ 设置", expanded=False):
 
 # --- 4. 聊天区域 (移动端优化) ---
 
-# 动态状态提示
-if st.session_state.pdf_content:
-    st.success("✅ 一切就绪！您可以基于文档提问，也可以直接提问任何问题。")
-    st.caption("💾 您的配置已自动保存，刷新页面后不会丢失")
-else:
-    st.info("💡 已就绪！您可以开始提问。如需基于文档问答，可在设置中上传PDF文档。")
-
-# 添加使用提示
+# 整合的使用提示（放在设置面板下面）
 st.markdown("""
-<div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 10px 0;">
-    <strong>📌 使用提示：</strong><br>
-    • 本网站不局限于工业问题
-    • 可以直接提问，也可以上传文档后进行基于文档的问答<br>
-    • 支持技术咨询、代码问题、学习辅导、生活问答等多种场景
+<div style="background: #f0f7ff; padding: 12px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #667eea;">
+    <strong>💡 使用提示：</strong> 本网站不局限于工业问题，可以直接提问，也可以上传文档后进行基于文档的问答。支持技术咨询、代码问题、学习辅导、生活问答等多种场景。
 </div>
 """, unsafe_allow_html=True)
 
