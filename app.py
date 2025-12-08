@@ -433,81 +433,13 @@ st.markdown(f"""
 </script>
 """, unsafe_allow_html=True)
 
-# --- 防止自动滚动到底部 (终极修复版) ---
+# --- 防止自动滚动到底部 (移除JS Hack) ---
+# 仅保留基础的加载回顶，不做任何侵入式修改
 st.markdown("""
 <script>
-(function() {
-    // 1. 移动端加载：物理禁止滚动 1.5秒，强制锁定在顶部
-    // 这是一个简单粗暴但有效的方法，防止 Streamlit 初始化时的自动跳转
-    if (window.innerWidth < 768) {
-        // 保存原始 overflow 样式
-        const originalOverflow = document.body.style.overflow;
-        
-        // 强制禁止滚动
-        document.body.style.overflow = 'hidden';
-        window.scrollTo(0, 0);
-        
-        // 1.5秒后恢复，期间反复强制回顶
-        let lockTimer = setInterval(() => {
-            window.scrollTo(0, 0);
-        }, 50);
-        
-        setTimeout(() => {
-            clearInterval(lockTimer);
-            document.body.style.overflow = originalOverflow;
-        }, 1500);
-    }
-
-    // 2. PC端 Expander 展开：劫持点击和滚动行为
-    // 解决“打开设置来回跳转抖动”的问题
-    let currentScrollY = 0;
-    
-    // 监听所有点击事件（捕获阶段），专门针对 Expander
-    document.addEventListener('click', function(e) {
-        // 检查是否点击了 Streamlit 的 Expander 头部
-        const expanderHeader = e.target.closest('.streamlit-expanderHeader');
-        if (expanderHeader) {
-            // 记录当前滚动位置
-            currentScrollY = window.scrollY;
-            
-            // 在接下来 500ms 内，如果发生滚动，强制恢复到点击时的位置
-            // 这一步是为了对抗 Streamlit 内部的自动 scrollIntoView
-            const preventScroll = () => {
-                if (Math.abs(window.scrollY - currentScrollY) > 10) {
-                    window.scrollTo(window.scrollX, currentScrollY);
-                }
-            };
-            
-            // 密集执行恢复操作
-            for (let i = 0; i < 20; i++) {
-                setTimeout(preventScroll, i * 30); // 每30ms检查一次，持续600ms
-            }
-        }
-    }, true);
-
-    // 3. 终极防御：劫持 scrollIntoView
-    // Streamlit 内部大量使用此 API 来实现自动跳转
-    const originalScrollIntoView = Element.prototype.scrollIntoView;
-    Element.prototype.scrollIntoView = function(arg) {
-        // 检查调用者是否在 Expander 内容中
-        // 如果是 Expander 内部元素请求滚动，则拦截
-        const insideExpander = this.closest('.streamlit-expanderContent');
-        
-        if (insideExpander) {
-            // 拦截！不做任何操作，从而阻止跳转
-            // console.log('拦截了 Expander 内部的自动滚动');
-            return;
-        }
-        
-        // 其他情况（如聊天发送后滚动到底部）保持原样
-        originalScrollIntoView.apply(this, arguments);
-    };
-
-    // 4. 也是强制回顶的补充（针对非移动端）
-    if (history.scrollRestoration) {
-        history.scrollRestoration = 'manual';
-    }
-})();
+window.addEventListener('load', function() {
+    window.scrollTo(0, 0);
+});
 </script>
 """, unsafe_allow_html=True)
 
@@ -709,18 +641,16 @@ QUICK_PROMPTS = [
 # 顶部标题 (渐变色酷炫标题)
 st.markdown('<p class="mobile-header">🏭 INDUSTRIAL AI BRAIN<br><span class="subtitle">工业人工智能大脑</span></p>', unsafe_allow_html=True)
 
-# === 设置面板 (移动端友好的折叠设计) ===
-with st.expander("⚙️ 设置", expanded=False):
+# === 设置面板 (移动到 Sidebar) ===
+with st.sidebar:
+    st.header("⚙️ 设置")
+    
     # 状态指示器
-    status_col1, status_col2, status_col3 = st.columns(3)
-    with status_col1:
-        st.caption(f"API Key: ✅")
-    with status_col2:
-        doc_status = "✅" if st.session_state.pdf_content else "⭕"
-        st.caption(f"文档: {doc_status}")
-    with status_col3:
-        model_name = SILICONFLOW_MODEL.split('/')[-1]
-        st.caption(f"模型: {model_name}")
+    st.caption(f"API Key: ✅")
+    doc_status = "✅" if st.session_state.pdf_content else "⭕"
+    st.caption(f"文档: {doc_status}")
+    model_name = SILICONFLOW_MODEL.split('/')[-1]
+    st.caption(f"模型: {model_name}")
     
     # 恢复保存的状态（仅在首次加载时）
     if not st.session_state.restored_from_cache:
@@ -832,22 +762,20 @@ with st.expander("⚙️ 设置", expanded=False):
     
     # 4. 高级设置 (移动端紧凑布局)
     st.markdown("**⚙️ 高级设置**")
-    col_p1, col_p2 = st.columns([2, 1])
-    with col_p1:
-        temperature = st.slider(
-            "🎨 创造力 (Temperature)", 
-            0.0, 1.0, 0.3,
-            help="数值越低越严谨，数值越高越有创造性"
-        )
-    with col_p2:
-        st.markdown("<br>", unsafe_allow_html=True)  # 对齐按钮
-        if st.button("🗑️ 清空", use_container_width=True, help="清空所有对话记录"):
-            st.session_state.messages = [{"role": "assistant", "content": "🤖 对话历史已清空，请重新提问。"}]
-            st.rerun()
+    temperature = st.slider(
+        "🎨 创造力 (Temperature)", 
+        0.0, 1.0, 0.3,
+        help="数值越低越严谨，数值越高越有创造性"
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)  # 对齐按钮
+    if st.button("🗑️ 清空对话", use_container_width=True, help="清空所有对话记录"):
+        st.session_state.messages = [{"role": "assistant", "content": "🤖 对话历史已清空，请重新提问。"}]
+        st.rerun()
     
     # 清除缓存按钮
     st.markdown("---")
-    if st.button("🗑️ 清除所有保存的状态（API Key和文档信息）", use_container_width=True, help="清除浏览器中保存的所有缓存数据"):
+    if st.button("🗑️ 清除所有保存的状态", use_container_width=True, help="清除浏览器中保存的所有缓存数据"):
         st.markdown("""
         <script>
         if (window.IndustrialAIStorage) {
