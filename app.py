@@ -343,16 +343,27 @@ st.markdown("""
         text-align: center;
     }
     
-    /* 侧边栏字体放大 */
-    [data-testid="stSidebar"] label {
+    /* 侧边栏字体与颜色终极优化 */
+    [data-testid="stSidebar"] * {
         font-size: 16px !important;
-        font-weight: 600 !important;
+        color: #ffffff !important; /* 强制全白 */
+        font-weight: 500;
     }
-    [data-testid="stSidebar"] .stMarkdown p {
-        font-size: 16px !important;
+    
+    /* 针对特定元素的微调 */
+    [data-testid="stSidebar"] h1, 
+    [data-testid="stSidebar"] h2, 
+    [data-testid="stSidebar"] h3 {
+        color: #ffffff !important;
+        font-weight: 700 !important;
     }
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-        font-size: 16px !important;
+    
+    /* 修复输入框/按钮内部文字颜色，防止被全白覆盖导致看不清 */
+    [data-testid="stSidebar"] button div {
+        color: inherit !important; 
+    }
+    [data-testid="stSidebar"] input {
+        color: #333 !important; /* 输入框文字要深色 */
     }
 </style>
 """, unsafe_allow_html=True)
