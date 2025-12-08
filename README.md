@@ -8,25 +8,9 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)](https://streamlit.io/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-[功能特性](#-功能特性) • [快速开始](#-快速开始) • [项目结构](#-项目结构) • [部署指南](#-部署指南)
+🌐 **在线体验**: [https://my-ai-brain-ngxgc6mxyspvxsj5adqdyw.streamlit.app/](https://my-ai-brain-ngxgc6mxyspvxsj5adqdyw.streamlit.app/)
 
 </div>
-
----
-
-## 📋 目录
-
-- [项目简介](#-项目简介)
-- [功能特性](#-功能特性)
-- [技术栈](#-技术栈)
-- [项目结构](#-项目结构)
-- [快速开始](#-快速开始)
-- [配置说明](#-配置说明)
-- [使用指南](#-使用指南)
-- [部署指南](#-部署指南)
-- [开发说明](#-开发说明)
-- [常见问题](#-常见问题)
-- [许可证](#-许可证)
 
 ---
 
@@ -391,4 +375,3 @@ pip install -r requirements.txt
 Made with ❤️ by vincentzhang569-dot
 
 </div>
-
