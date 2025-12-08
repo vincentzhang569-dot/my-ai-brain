@@ -278,19 +278,41 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 🚀 优化开始：使用 cache_data 缓存数据读取 ---
-# ttl=600 表示缓存 600秒(10分钟)后过期，自动刷新一次，保证数据不过于陈旧
+# --- 🚀 性能优化：数据预处理和缓存 ---
+# 最大显示点数（大幅减少以提升性能）
+MAX_POINTS = 600  # 从2000减少到600，大幅提升渲染速度
+
 @st.cache_data(ttl=600) 
 def load_data():
-    # 这里放原本的读取逻辑
+    """加载并预处理数据"""
     if not os.path.exists("robot_sensor_data.csv"):
-        # ... (你之前的生成代码) ...
         from generate_data import generate_robot_data
         generate_robot_data()
     
     df = pd.read_csv("robot_sensor_data.csv")
     df['Timestamp'] = pd.to_datetime(df['Timestamp'])
     return df
+
+@st.cache_data(ttl=600)
+def get_robot_sampled_data(df, robot_id, max_points=MAX_POINTS):
+    """为指定机器人预处理采样数据，避免每次渲染都重新计算"""
+    robot_df = df[df['Robot_ID'] == robot_id].sort_values('Timestamp')
+    
+    if len(robot_df) <= max_points:
+        return robot_df
+    
+    # 智能采样：保留最近的数据 + 均匀采样历史数据
+    recent_count = min(200, len(robot_df) // 3)  # 最近200个点或1/3数据
+    recent_data = robot_df.tail(recent_count)
+    historical_data = robot_df.iloc[:-recent_count]
+    
+    if len(historical_data) > 0:
+        # 均匀采样历史数据
+        step = max(1, len(historical_data) // (max_points - recent_count))
+        sampled_historical = historical_data.iloc[::step]
+        robot_df = pd.concat([sampled_historical, recent_data]).sort_values('Timestamp')
+    
+    return robot_df
 
 # 使用缓存函数加载数据
 df = load_data()
@@ -358,22 +380,12 @@ try:
         index=0
     )
     
-    # 筛选该机器人的数据
-    robot_df = df[df['Robot_ID'] == selected_robot].sort_values('Timestamp')
-    
-    # 性能优化：如果数据点太多，进行采样（保留最近的数据和关键点）
-    MAX_POINTS = 2000  # 最大显示点数
-    if len(robot_df) > MAX_POINTS:
-        # 保留最近的数据 + 均匀采样历史数据
-        recent_data = robot_df.tail(500)  # 最近500个点
-        historical_data = robot_df.iloc[:-500]
-        if len(historical_data) > 0:
-            # 均匀采样历史数据
-            step = max(1, len(historical_data) // (MAX_POINTS - 500))
-            sampled_historical = historical_data.iloc[::step]
-            robot_df = pd.concat([sampled_historical, recent_data]).sort_values('Timestamp')
+    # 使用预处理的数据（已缓存采样结果）
+    with st.spinner('📊 正在加载图表数据...'):
+        robot_df = get_robot_sampled_data(df, selected_robot)
     
     st.markdown(f"<h2>📈 {selected_robot} - 历史趋势分析</h2>", unsafe_allow_html=True)
+    st.caption(f"📊 显示 {len(robot_df):,} 个数据点（已优化采样）")
     
     # 创建双子图 - 移动端优化
     # 将Y轴标题信息直接写在子图标题里
@@ -393,15 +405,16 @@ try:
     TEMP_THRESHOLD = 80
     VIB_THRESHOLD = 5
     
-    # 温度折线
+    # 温度折线 - 性能优化：使用简化的hover模板
     fig.add_trace(
         go.Scatter(
             x=robot_df['Timestamp'],
             y=robot_df['Motor_Temperature'],
             mode='lines',
             name='温度',
-            line=dict(color='#00d4ff', width=2),
-            hovertemplate='<b>时间</b>: %{x}<br><b>温度</b>: %{y:.2f}°C<extra></extra>'
+            line=dict(color='#00d4ff', width=1.5),  # 稍微减小线宽
+            hovertemplate='%{y:.1f}°C<extra></extra>',  # 简化hover信息
+            connectgaps=False  # 不连接缺失数据，减少计算
         ),
         row=1, col=1
     )
@@ -418,31 +431,33 @@ try:
         row=1, col=1
     )
     
-    # 超过警戒线的区域高亮
+    # 超过警戒线的区域高亮（仅显示采样后的数据点，减少渲染负担）
     over_temp = robot_df[robot_df['Motor_Temperature'] > TEMP_THRESHOLD]
-    if not over_temp.empty:
+    if not over_temp.empty and len(over_temp) <= 100:  # 只显示少量超温点，避免性能问题
         fig.add_trace(
             go.Scatter(
                 x=over_temp['Timestamp'],
                 y=over_temp['Motor_Temperature'],
                 mode='markers',
                 name='超温',
-                marker=dict(color='red', size=8, symbol='x'),
-                hovertemplate='<b>⚠️ 超温</b><br>时间: %{x}<br>温度: %{y:.2f}°C<extra></extra>'
+                marker=dict(color='red', size=6, symbol='x'),
+                hovertemplate='<b>⚠️ 超温</b><br>时间: %{x}<br>温度: %{y:.2f}°C<extra></extra>',
+                showlegend=False  # 减少图例项
             ),
             row=1, col=1
         )
     
     # ===== 振动图表 =====
-    # 振动折线
+    # 振动折线 - 性能优化：使用简化的hover模板
     fig.add_trace(
         go.Scatter(
             x=robot_df['Timestamp'],
             y=robot_df['Vibration_Level'],
             mode='lines',
             name='振动',
-            line=dict(color='#00ff41', width=2),
-            hovertemplate='<b>时间</b>: %{x}<br><b>振动</b>: %{y:.3f} mm/s<extra></extra>'
+            line=dict(color='#00ff41', width=1.5),  # 稍微减小线宽
+            hovertemplate='%{y:.2f} mm/s<extra></extra>',  # 简化hover信息
+            connectgaps=False  # 不连接缺失数据，减少计算
         ),
         row=2, col=1
     )
@@ -459,17 +474,18 @@ try:
         row=2, col=1
     )
     
-    # 超过警戒线的区域高亮
+    # 超过警戒线的区域高亮（仅显示采样后的数据点，减少渲染负担）
     over_vib = robot_df[robot_df['Vibration_Level'] > VIB_THRESHOLD]
-    if not over_vib.empty:
+    if not over_vib.empty and len(over_vib) <= 100:  # 只显示少量超振动点，避免性能问题
         fig.add_trace(
             go.Scatter(
                 x=over_vib['Timestamp'],
                 y=over_vib['Vibration_Level'],
                 mode='markers',
                 name='超振动',
-                marker=dict(color='red', size=8, symbol='x'),
-                hovertemplate='<b>⚠️ 超振动</b><br>时间: %{x}<br>振动: %{y:.3f} mm/s<extra></extra>'
+                marker=dict(color='red', size=6, symbol='x'),
+                hovertemplate='<b>⚠️ 超振动</b><br>时间: %{x}<br>振动: %{y:.3f} mm/s<extra></extra>',
+                showlegend=False  # 减少图例项
             ),
             row=2, col=1
         )
@@ -480,19 +496,8 @@ try:
         margin=dict(l=10, r=10, t=30, b=10),
         title=dict(font=dict(size=14)),
         
-        # 2. 图例移到顶部，不占右边位置
-        showlegend=True,
-        legend=dict(
-            orientation="h",    # 水平排列
-            yanchor="bottom",
-            y=1.02,             # 放在图表上方
-            xanchor="right",
-            x=1,
-            font=dict(size=9),  # 图例字体更小
-            bgcolor='rgba(0, 0, 0, 0.5)',  # 半透明背景
-            bordercolor='rgba(255, 255, 255, 0.2)',
-            borderwidth=1
-        ),
+        # 2. 图例简化 - 性能优化
+        showlegend=False,  # 关闭图例以提升性能（信息已在子图标题中）
         
         # 3. 背景透明化，融合暗色主题
         paper_bgcolor='rgba(0,0,0,0)',
@@ -501,9 +506,11 @@ try:
         # 4. 自动高度 - 两个子图，每个约300px
         height=600,  # 两个图表各300px
         
-        # 5. 其他设置
-        hovermode='x unified',
+        # 5. 其他设置 - 性能优化
+        hovermode='closest',  # 从'unified'改为'closest'，减少计算负担
         font=dict(color='#ffffff', family='Arial, sans-serif', size=10),
+        # 关闭动画和过渡效果，提升性能
+        transition=dict(duration=0),
     )
     
     # 更新坐标轴 - 移动端优化
@@ -541,12 +548,23 @@ try:
         row=2, col=1
     )
     
-    # 移动端优化的图表配置 - 彻底隐藏工具栏
+    # 性能优化的图表配置 - 减少交互以提升性能
     config = {
         'displayModeBar': False,  # 彻底隐藏工具栏
-        'staticPlot': False,
-        'scrollZoom': False,
-        'responsive': True  # 响应式
+        'staticPlot': False,  # 保持基本交互（hover）
+        'scrollZoom': False,  # 禁用缩放
+        'doubleClick': False,  # 禁用双击重置
+        'showTips': False,  # 禁用提示
+        'responsive': True,  # 响应式
+        'autosizable': True,  # 自动调整大小
+        # 性能优化选项
+        'toImageButtonOptions': {
+            'format': 'png',
+            'filename': 'dashboard',
+            'height': 600,
+            'width': 1200,
+            'scale': 1
+        }
     }
     
     st.plotly_chart(fig, use_container_width=True, config=config)
@@ -586,6 +604,12 @@ try:
             elif row['状态'] == 'Warning':
                 return ['background-color: rgba(255, 215, 0, 0.2)'] * len(row)
             return [''] * len(row)
+        
+        # 性能优化：限制显示行数，避免渲染过多数据
+        max_display_rows = 100
+        if len(display_df) > max_display_rows:
+            st.warning(f"⚠️ 预警记录较多，仅显示最近 {max_display_rows} 条")
+            display_df = display_df.head(max_display_rows)
         
         styled_df = display_df.style.apply(highlight_status, axis=1)
         st.dataframe(styled_df, use_container_width=True, height=400)
