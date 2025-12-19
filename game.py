@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V42 Loot & Rewards",
+    page_title="Super AI Kart: V43 Physics & Loot",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -96,7 +96,7 @@ game_html = """
 
     <div id="menu">
         <h1 id="menu-title">SUPER AI KART</h1>
-        <p id="menu-sub">V42: Loot & Rewards Update</p>
+        <p id="menu-sub">V43: Physics Fix & Harvest</p>
         <div class="btn-container">
             <button id="btn-retry" class="start-btn" onclick="retryLevel()" style="display:none; background: #4CAF50;">RETRY</button>
             <button id="btn-start" class="start-btn" onclick="resetGame()">PLAY</button>
@@ -117,7 +117,7 @@ const PHYSICS = isMobile ?
 let running = false;
 let frames = 0;
 let score = 0;
-let coinCount = 0; // New Coin Counter
+let coinCount = 0; 
 let level = 0;
 let audioCtx = null;
 let bgmTimer = null;
@@ -137,7 +137,7 @@ let particles = [];
 let items = []; 
 let goal = null;
 let boss = null; 
-let floatText = []; // Floating text for +HP
+let floatText = []; 
 
 // Visuals & Biomes
 const BIOMES = [
@@ -302,10 +302,10 @@ function spawnItem(block) {
     let type = (block.content==="coin")?0:(block.content==="mushroom"?1:2);
     let isMoving = (type !== 0);
     
-    // FIX: Mushroom always moves RIGHT (dx = 2)
+    // FIX: Force RIGHT direction (positive dx)
     let idX = isMoving ? 2 : 0; 
 
-    items.push({ x: block.x+15, y: block.y, w:30, h:30, type:type, dy:-6, dx:idX, targetY:block.y-35, state:'spawning' });
+    items.push({ x: block.x+15, y: block.y, w:30, h:30, type:type, dy:-6, dx:idX, state:'spawning' });
     playTone(500, 'square', 0.1);
     block.content=null; block.hit=true;
 }
@@ -396,16 +396,16 @@ function update() {
 
                 if(boss.hp <= 0) { 
                     boss.dead = true; score += 5000; playTone(50, 'noise', 0.8);
-                    // BOSS LOOT FOUNTAIN
-                    for(let i=0; i<25; i++) {
+                    // BOSS LOOT FOUNTAIN (FIXED: Slower speed)
+                    for(let i=0; i<30; i++) {
                         items.push({
                              x: boss.x + boss.w/2,
-                             y: boss.y,
+                             y: boss.y + boss.h/2,
                              w: 30, h: 30,
                              type: 0, // Coin
-                             dx: (Math.random()-0.5) * 15,
-                             dy: -10 - Math.random()*10,
-                             state: 'moving' // Let them fall
+                             dx: (Math.random()-0.5) * 10, // Reduced spread
+                             dy: -5 - Math.random()*8,     // Reduced jump
+                             state: 'moving'
                         });
                     }
                 }
@@ -417,29 +417,47 @@ function update() {
     items.forEach((it, i) => {
         if(it.state!=='static') { 
             it.dy+=0.5; it.x+=it.dx; it.y+=it.dy;
-            if(it.y > canvas.height) items.splice(i,1); // Cleanup fallen items
+            
+            // LOOT FRICTION (Coins only)
+            if(it.type === 0) {
+                 it.dx *= 0.95; // Strong friction for coins
+            }
+            
+            if(it.y > canvas.height) items.splice(i,1); 
         }
         
         blocks.forEach(b => { 
             if(colCheck(it, b) && it.state!=='static') { 
-                if(it.dy>0) { 
+                // PHYSICS FIX: If moving UP (spawning), ignore side collisions
+                if (it.dy < 0) return;
+
+                if(it.dy>0 && it.y+it.h-it.dy <= b.y+15) { // Land on top
                     it.y=b.y-it.h; 
-                    it.dy= -it.dy * 0.5; // Bounce items slightly
+                    it.dy= -it.dy * 0.5; 
                     if(Math.abs(it.dy) < 1) it.dy=0;
-                } else it.dx*=-1; 
+                } else { 
+                    // Bounce off walls
+                    it.dx*=-1; 
+                } 
             } 
         });
+
+        // GROUND COLLISION FOR LOOT
+        if(it.y > canvas.height - 110) { // Approx ground level
+            it.y = canvas.height - 110;
+            it.dy = -it.dy * 0.5;
+            if(Math.abs(it.dy) < 1) it.dy=0;
+        }
 
         if(colCheck(player, it)) {
             items.splice(i,1); 
             if(it.type===0) { 
-                // COIN LOGIC
                 score+=100; 
                 coinCount++;
                 if(coinCount >= 50) {
                     coinCount -= 50;
                     player.hp++;
-                    playTone(600, 'square', 0.3); playTone(800, 'square', 0.3); // 1UP Sound
+                    playTone(600, 'square', 0.3); playTone(800, 'square', 0.3);
                     floatText.push({x:player.x, y:player.y-20, t:"+1 HP", life:60});
                 }
             } 
