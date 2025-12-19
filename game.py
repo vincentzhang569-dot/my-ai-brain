@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V47 Evolution",
+    page_title="Super AI Kart: V47.1 Optimized",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -98,7 +98,7 @@ game_html = """
 
     <div id="menu">
         <h1 id="menu-title">SUPER AI KART</h1>
-        <p id="menu-sub">V47: EVOLUTION</p>
+        <p id="menu-sub">V47.1: OPTIMIZED</p>
         <div class="btn-container">
             <button id="btn-retry" class="start-btn" onclick="retryLevel()" style="display:none; background: #4CAF50;">RETRY</button>
             <button id="btn-start" class="start-btn" onclick="resetGame()">PLAY</button>
@@ -138,8 +138,8 @@ let blocks = [];
 let enemies = [];
 let particles = [];
 let items = []; 
-let projectiles = []; // Boss projectiles
-let p_bullets = [];   // Player projectiles
+let projectiles = []; 
+let p_bullets = [];   
 let goal = null;
 let boss = null; 
 let floatText = []; 
@@ -205,14 +205,12 @@ function addCoin(x, y, amount=1) {
     score += 100 * amount;
     if(coinCount >= 50) {
         coinCount -= 50;
-        player.hp++; // Increment HP to allow reaching higher forms
+        player.hp++; 
         if(player.hp >= 2) { player.w=40; player.h=56; }
         playTone(600, 'square', 0.3); playTone(800, 'square', 0.3);
         floatText.push({x:player.x, y:player.y-20, t:"+1 HP", life:60});
-        // Sparkle effect for level up
         for(let k=0;k<10;k++) particles.push({x:player.x+15,y:player.y+20,dx:(Math.random()-0.5)*10,dy:(Math.random()-0.5)*10,life:30,c:'#FFD700'});
     }
-    // Classic sound
     playTone(1050, 'square', 0.1); 
     floatText.push({x:x, y:y-20, t:"+1 🪙", life:30});
 }
@@ -223,7 +221,6 @@ function initLevel(lvl) {
     let t = BIOMES[lvl % BIOMES.length];
     
     player.x = 100; player.y = 0; player.dx=0; player.dy=0;
-    // Keep HP between levels? Yes, allows checking out higher forms
     if (player.hp < 1) player.hp = 1;
     player.w = player.hp > 1 ? 40 : 32; 
     player.h = player.hp > 1 ? 56 : 40; 
@@ -241,9 +238,8 @@ function initLevel(lvl) {
     while(x < endX) {
         let rng = Math.random();
         
-        // Fix for coins stuck in blocks: Spawn them higher (sky)
         if(Math.random() < 0.25) {
-            let cy = groundY - 250 - Math.random()*80; // Raised significantly to avoid platform overlap
+            let cy = groundY - 250 - Math.random()*80; 
             for(let k=0; k<4; k++) items.push({ x: x + k*35, y: cy + Math.sin(k)*20, w:30, h:30, type:0, dy:0, dx:0, state:'static' });
         }
 
@@ -255,7 +251,9 @@ function initLevel(lvl) {
             x += w;
         } 
         else if(rng < 0.6) {
-            let gap = 140 + Math.random() * 60;
+            // FIX: Reduced gap size heavily to prevent "Rift Valley" unjumpable gaps
+            // Old was 140 + 60 (up to 200px), New is 100 + 40 (max 140px)
+            let gap = 100 + Math.random() * 40;
             spawnEnemy(x + gap/2, groundY - 150 - Math.random()*100, 'flyer');
             x += gap; 
         }
@@ -332,13 +330,11 @@ function spawnItem(block) {
         block.content=null; block.hit=true;
         return; 
     }
-    // Type: 1=Mush, 2=Kart, 3=Flower
     let type = 1;
     if(block.content === "kart") type = 2;
     if(block.content === "flower") type = 3;
 
     let idX = 2; 
-    // Fix: Spawn item slightly higher and stronger upward force to clear block
     items.push({ x: block.x+15, y: block.y-32, w:30, h:30, type:type, dy:-8, dx:idX, state:'spawning' });
     playTone(500, 'square', 0.1);
     block.content=null; block.hit=true;
@@ -443,10 +439,8 @@ function update() {
         }
     }
 
-    // --- PLAYER BULLETS ---
     p_bullets.forEach((b, i) => {
         b.x += b.dx; b.life--;
-        // Hit boss
         if(boss && !boss.dead && colCheck(b, boss)) {
              boss.hp -= 1; 
              b.life = 0; 
@@ -454,7 +448,6 @@ function update() {
              playTone(200, 'noise', 0.2);
              boss.iframes = 5; 
         }
-        // Hit Enemies
         enemies.forEach(e => {
             if(!e.dead && colCheck(b, e)) {
                 e.dead = true; b.life = 0;
@@ -466,7 +459,6 @@ function update() {
         if(b.life <= 0) p_bullets.splice(i, 1);
     });
 
-    // --- BOSS AI UPDATE ---
     if(boss && !boss.dead) {
         if(boss.x < player.x + 800) {
             document.getElementById('boss-ui').style.display = 'block';
@@ -542,7 +534,6 @@ function update() {
         }
     } else { document.getElementById('boss-ui').style.display = 'none'; }
     
-    // Projectiles Logic
     projectiles.forEach((p, i) => {
         p.x += p.dx; p.y += p.dy; p.life--;
         if(colCheck(player, p)) {
@@ -571,7 +562,6 @@ function update() {
             items.splice(i,1); 
             if(it.type===0) { addCoin(it.x, it.y); } 
             else if(it.type===1) { 
-                // Stack HP for forms
                 player.hp++; 
                 if(player.hp > 1) { player.w=40; player.h=56; } 
                 score += 1000; playTone(200,'square',0.3); spawnExplosion(player.x, player.y); 
@@ -580,7 +570,7 @@ function update() {
             else if(it.type===2) { player.kart=true; player.timer=600; player.w=48; player.h=24; }
             else if(it.type===3) { 
                 player.hasFire=true; 
-                player.hp++; // Also adds HP
+                player.hp++;
                 player.w=40; player.h=56; score+=1000; playTone(200,'square',0.3); 
                 floatText.push({x:player.x, y:player.y-20, t:"FIRE!", life:60}); 
             }
@@ -638,7 +628,6 @@ function draw() {
     document.getElementById('world-ui').innerText = "WORLD 1-" + (level+1);
     
     let hpText = "HP: " + player.hp;
-    // UI Update for Forms
     if(player.hp >= 5) hpText += " (SSJ GOLD)";
     else if(player.hp === 4) hpText += " (SSJ RED)";
     else if(player.hp === 3) hpText += " (SSJ BLUE)";
@@ -673,7 +662,6 @@ function draw() {
         }
     });
     
-    // Draw Bullets
     p_bullets.forEach(b => {
         ctx.fillStyle = "#FF5722"; drawCircle(b.x-camX, b.y, 6, "#FF5722");
         ctx.fillStyle = "#FFEB3B"; drawCircle(b.x-camX, b.y, 3, "#FFEB3B");
@@ -773,32 +761,22 @@ function draw() {
         } else {
              let dir = player.facing;
              
-             // --- TRANSFORMATION LOGIC V47 ---
-             let hatC = "#b71c1c"; // Default Red Hat
-             let suitC = "#0D47A1"; // Default Blue Suit
+             let hatC = "#b71c1c"; 
+             let suitC = "#0D47A1"; 
              
              if(player.hp === 2) {
-                 // Big, but normal colors
                  hatC = "#b71c1c";
                  suitC = "#0D47A1";
              } else if(player.hp === 3) {
-                 // SSJ Blue
-                 hatC = "#00B0FF"; // Cyan Hair
-                 suitC = "#F57C00"; // Orange Gi
+                 hatC = "#00B0FF";
+                 suitC = "#F57C00";
              } else if(player.hp === 4) {
-                 // SSJ God (Red)
-                 hatC = "#D50000"; // Red Hair
-                 suitC = "#F57C00"; // Orange Gi
+                 hatC = "#D50000";
+                 suitC = "#F57C00";
              } else if(player.hp >= 5) {
-                 // SSJ Gold (Legendary)
-                 hatC = "#FFD700"; // Gold Hair
-                 suitC = "#F57C00"; // Orange Gi
-                 // Aura
-                 ctx.globalAlpha = 0.5;
-                 ctx.fillStyle = "#FFD700";
-                 let auraSize = Math.abs(Math.sin(frames*0.2))*5;
-                 drawCircle(px + player.w/2, py + player.h/2, 35 + auraSize, "#FFD700");
-                 ctx.globalAlpha = 1.0;
+                 hatC = "#FFD700";
+                 suitC = "#F57C00";
+                 // Aura REMOVED as requested
              }
 
              ctx.fillStyle = hatC; ctx.fillRect(px, py, player.w, 10); ctx.fillRect(dir>0?px+5:px-5, py+8, player.w, 4);
@@ -806,12 +784,10 @@ function draw() {
              drawEye(dir>0?px+22:px+10, py+15, 3, dir);
              ctx.fillStyle = suitC; ctx.fillRect(px+5, py+20, player.w-10, 15);
              
-             // Hair/Hat detail
              ctx.fillStyle = hatC; 
              let run = (Math.abs(player.dx)>0.1) ? Math.sin(frames*0.5)*5 : 0;
              ctx.fillRect(px+(dir>0?0:20)+run, py+22, 8, 8);
              
-             // Shoes
              ctx.fillStyle = "#000"; ctx.fillRect(px+5-run, py+35, 10, 5); ctx.fillRect(px+18+run, py+35, 10, 5);
         }
     }
