@@ -2,8 +2,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V47.1 Optimized",
-    page_icon="⚡",
+    page_title="Super AI Kart: V47.2 Physics Fix",
+    page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -98,7 +98,7 @@ game_html = """
 
     <div id="menu">
         <h1 id="menu-title">SUPER AI KART</h1>
-        <p id="menu-sub">V47.1: OPTIMIZED</p>
+        <p id="menu-sub">V47.2: PHYSICS FIX</p>
         <div class="btn-container">
             <button id="btn-retry" class="start-btn" onclick="retryLevel()" style="display:none; background: #4CAF50;">RETRY</button>
             <button id="btn-start" class="start-btn" onclick="resetGame()">PLAY</button>
@@ -251,8 +251,6 @@ function initLevel(lvl) {
             x += w;
         } 
         else if(rng < 0.6) {
-            // FIX: Reduced gap size heavily to prevent "Rift Valley" unjumpable gaps
-            // Old was 140 + 60 (up to 200px), New is 100 + 40 (max 140px)
             let gap = 100 + Math.random() * 40;
             spawnEnemy(x + gap/2, groundY - 150 - Math.random()*100, 'flyer');
             x += gap; 
@@ -316,7 +314,7 @@ function createBricks(bx, by, t) {
 }
 
 function spawnEnemy(x, y, type) {
-    let e = { x:x, y:y, w:36, h:36, dx:-1.5, dy:0, dead:false, type:0, anchorY:y, timer:0, facing:-1 };
+    let e = { x:x, y:y, w:36, h:36, dx:-1.5, dy:0, dead:false, type:0, anchorY:y, timer:0, facing:-1, ground:false };
     if(type === 'flyer') { e.type = 1; e.dx = -2; e.w=40; e.h=30; }
     else if(type === 'drill') { e.type = 2; e.dx = 0; e.y += 30; e.anchorY = y; e.w=40; e.h=60; }
     else if(type === 'jumper') { e.type = 3; e.dx = -1.0; e.h=32; }
@@ -580,10 +578,62 @@ function update() {
     enemies.forEach(e => {
         if(e.dead) return;
         e.timer++;
-        if(e.type === 1) { e.x += e.dx; e.y = e.anchorY + Math.sin(frames * 0.1) * 60; } 
-        else if(e.type === 2) { let cycle = e.timer % 180; if(cycle < 90 && e.y > e.anchorY - e.h) e.y -= 2; if(cycle >= 90 && e.y < e.anchorY) e.y += 2; } 
-        else if(e.type === 3) { e.x += e.dx; e.dy += PHYSICS.grav; e.y += e.dy; if(e.y >= e.anchorY) { e.y = e.anchorY; e.dy = 0; e.dx=0; } if(Math.random()<0.02 && e.dy===0) { e.dy=-10; e.dx = (player.x<e.x)?-2:2; } } 
-        else { e.x += e.dx; if(frames%60==0 && Math.random()<0.3) e.dx *= -1; }
+
+        // ENEMY LOGIC FIX (Physics & Collision)
+        if(e.type === 0 || e.type === 3) { // Walker or Jumper
+             e.dy += 0.5; // Gravity
+             e.y += e.dy;
+             e.x += e.dx;
+             e.ground = false;
+
+             // Collision with World
+             blocks.forEach(b => {
+                if(colCheck(e, b)) {
+                    // Vertical
+                    if(e.dy > 0 && e.y + e.h - e.dy <= b.y + 10) {
+                        e.y = b.y - e.h; e.dy = 0; e.ground = true;
+                    } 
+                    else if (e.dy < 0 && e.y - e.dy >= b.y + b.h - 10) { // Hit Head
+                         e.y = b.y + b.h; e.dy = 0;
+                    }
+                    // Horizontal (Turn Around)
+                    else {
+                        e.dx *= -1; 
+                        e.x += e.dx; // Push back
+                    }
+                }
+             });
+             
+             // Jumper jump logic
+             if(e.type === 3 && e.ground && Math.random() < 0.02) {
+                 e.dy = -10; e.dx = (player.x < e.x) ? -2 : 2;
+             }
+             
+             // Smart Cliff Detection (Prevent walking on air)
+             if(e.type === 0 && e.ground) {
+                 let lookX = e.x + e.w/2 + (e.dx > 0 ? e.w : -e.w);
+                 let foundGround = false;
+                 blocks.forEach(b => {
+                     if(lookX >= b.x && lookX <= b.x + b.w && e.y + e.h + 2 >= b.y && e.y + e.h - 5 <= b.y + b.h) {
+                         foundGround = true;
+                     }
+                 });
+                 if(!foundGround) {
+                     e.dx *= -1; // Turn around if pit detected
+                     e.x += e.dx * 2;
+                 }
+             }
+             
+             if(e.y > canvas.height + 100) e.dead = true; // Fall cleanup
+        } 
+        else if(e.type === 1) { // Flyer (Unchanged)
+             e.x += e.dx; e.y = e.anchorY + Math.sin(frames * 0.1) * 60; 
+        }
+        else if(e.type === 2) { // Drill (Unchanged)
+             let cycle = e.timer % 180; 
+             if(cycle < 90 && e.y > e.anchorY - e.h) e.y -= 2; 
+             if(cycle >= 90 && e.y < e.anchorY) e.y += 2; 
+        }
         
         if(colCheck(player, e)) {
             if(player.kart) { e.dead=true; score+=500; spawnExplosion(e.x,e.y); addCoin(e.x, e.y); }
@@ -776,7 +826,6 @@ function draw() {
              } else if(player.hp >= 5) {
                  hatC = "#FFD700";
                  suitC = "#F57C00";
-                 // Aura REMOVED as requested
              }
 
              ctx.fillStyle = hatC; ctx.fillRect(px, py, player.w, 10); ctx.fillRect(dir>0?px+5:px-5, py+8, player.w, 4);
