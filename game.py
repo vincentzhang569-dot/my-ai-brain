@@ -1,15 +1,14 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-# 页面基础配置
 st.set_page_config(
-    page_title="Super AI Kart: V27 Stable",
-    page_icon="🍄",
+    page_title="Super AI Kart: V28 Final Fix",
+    page_icon="🔥",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# 强制全屏 CSS (修复PC端边距)
+# 强制全屏 + 隐藏边框
 st.markdown("""
     <style>
         #MainMenu, header, footer {visibility: hidden;}
@@ -18,7 +17,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 游戏核心代码
 game_html = """
 <!DOCTYPE html>
 <html>
@@ -27,74 +25,54 @@ game_html = """
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    body { background: #000; overflow: hidden; font-family: 'Arial', sans-serif; }
+    body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
 
-    /* 游戏画布 */
-    #game-container {
-        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-        display: block; /* 默认显示，JS控制隐藏 */
-    }
+    #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
     canvas { display: block; width: 100%; height: 100%; }
 
-    /* 旋转提示 (仅手机竖屏显示) */
-    #rotate-hint {
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: #111; color: #fff; z-index: 10000;
-        display: none; /* 默认隐藏 */
-        flex-direction: column; align-items: center; justify-content: center;
-        text-align: center;
-    }
-    .icon-spin { font-size: 60px; margin-bottom: 20px; animation: spin 2s infinite; }
-    @keyframes spin { 0% { transform: rotate(0deg); } 25% { transform: rotate(-90deg); } 100% { transform: rotate(-90deg); } }
-
-    /* UI 界面 */
-    .hud { 
-        position: absolute; top: 20px; 
-        font-weight: bold; font-size: 20px; 
-        text-shadow: 2px 2px 0 #000; pointer-events: none; z-index: 10; 
-        color: white;
-    }
+    /* UI */
+    .hud { position: absolute; top: 20px; color: #fff; font-size: 24px; font-weight: bold; text-shadow: 2px 2px 0 #000; z-index: 10; pointer-events: none; }
     #score-ui { left: 20px; }
     #world-ui { right: 20px; color: #FFD700; }
 
-    /* 移动端虚拟按键 */
-    #controls {
-        display: none; position: absolute; bottom: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20;
-    }
+    /* 移动端按键 */
+    #controls { display: none; position: absolute; bottom: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
     .btn {
-        position: absolute; bottom: 25px; width: 80px; height: 80px;
-        background: rgba(255,255,255,0.25); border: 2px solid rgba(255,255,255,0.6);
-        border-radius: 50%; pointer-events: auto; backdrop-filter: blur(4px);
+        position: absolute; bottom: 30px; width: 80px; height: 80px;
+        background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.6);
+        border-radius: 50%; pointer-events: auto; backdrop-filter: blur(5px);
         display: flex; align-items: center; justify-content: center;
-        color: white; font-size: 30px; font-weight: bold; user-select: none;
+        color: white; font-size: 30px;
     }
-    .btn:active { background: rgba(255,255,255,0.5); transform: scale(0.9); }
+    .btn:active { background: rgba(255,255,255,0.4); transform: scale(0.95); }
     #btn-L { left: 20px; }
     #btn-R { left: 120px; }
-    #btn-J { right: 30px; width: 90px; height: 90px; background: rgba(255,60,60,0.3); }
+    #btn-J { right: 30px; width: 90px; height: 90px; background: rgba(255,50,50,0.3); }
 
-    /* 菜单层 */
+    /* 菜单 */
     #menu {
         position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0,0,0,0.85); z-index: 100;
+        background: rgba(0,0,0,0.9); z-index: 100;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
     .start-btn {
-        padding: 15px 60px; font-size: 24px; background: #E040FB; color: white;
-        border: none; cursor: pointer; border-radius: 8px;
-        box-shadow: 0 4px 0 #AA00FF; margin-top: 20px;
-        font-family: monospace;
+        padding: 20px 60px; font-size: 32px; background: #FF3D00; color: white;
+        border: 4px solid #fff; cursor: pointer; border-radius: 10px;
+        box-shadow: 0 10px 0 #BF360C; font-weight: bold;
+        transition: transform 0.1s;
     }
-    .start-btn:active { transform: translateY(4px); box-shadow: none; }
+    .start-btn:active { transform: translateY(10px); box-shadow: 0 0 0; }
+    
+    #rotate-hint {
+        display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: #111; color: #fff; z-index: 200;
+        align-items: center; justify-content: center; text-align: center;
+    }
 </style>
 </head>
 <body>
 
-<div id="rotate-hint">
-    <div class="icon-spin">📱</div>
-    <h2>请旋转手机</h2>
-    <p>Landscape Mode Required</p>
-</div>
+<div id="rotate-hint"><h1>Please Rotate / 请横屏</h1></div>
 
 <div id="game-container">
     <canvas id="c"></canvas>
@@ -108,202 +86,267 @@ game_html = """
     </div>
 
     <div id="menu">
-        <h1 style="color:#fff; font-size:32px; text-shadow:0 3px 0 #000;">SUPER AI KART</h1>
-        <h3 style="color:#bbb; font-size:16px; margin-bottom:10px;">V27.0: PC Fix & Physics Tune</h3>
+        <h1 style="color:#fff; margin-bottom:10px; text-shadow:4px 4px 0 #f00;">SUPER AI KART</h1>
+        <p style="color:#ccc; margin-bottom:30px;">V28: Physics Split & Monsters++</p>
         <button class="start-btn" onclick="startGame()">START GAME</button>
     </div>
 </div>
 
 <script>
+// --- 核心变量 ---
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-// --- 1. 严格的设备检测 (修复PC打不开的问题) ---
-// 只有检测到这些关键字才认为是移动端
-const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+// --- 1. 物理参数分离 (PC快，手机慢) ---
+const PHYSICS = isMobile ? 
+    { spd: 3.5, acc: 0.3, fric: 0.85, jump: -10, grav: 0.55 } : // 手机: 稳
+    { spd: 7.0, acc: 0.8, fric: 0.80, jump: -12, grav: 0.60 };  // PC: 快
 
+// 游戏状态
 let running = false;
+let frames = 0;
+let score = 0;
+let level = 0;
 let audioCtx = null;
-let loopId = null;
+let bgmInterval = null;
 
-// --- 2. 物理手感调优 (减速版) ---
-const PHYSICS = {
-    acc: 0.2,       // 加速度 (原0.5 -> 0.2, 起步更稳)
-    friction: 0.88, // 摩擦力 (原0.85 -> 0.88, 刹车更快)
-    maxSpd: 3.2,    // 最大速度 (原4.5 -> 3.2, 更好控制)
-    jumpForce: -10, // 跳跃高度
-    gravity: 0.55   // 重力
-};
-
-// 关卡配置
-const THEMES = [
-    { name: "FOREST", bg: "#64B5F6", block: "#81C784" },
-    { name: "DESERT", bg: "#FFF176", block: "#FFD54F" }, 
-    { name: "SKY",    bg: "#E1F5FE", block: "#ffffff" },
-    { name: "CAVE",   bg: "#4E342E", block: "#8D6E63" },
-    { name: "SPACE",  bg: "#212121", block: "#616161" },
-    { name: "OCEAN",  bg: "#0277BD", block: "#00ACC1" }
-];
-
-let state = { level: 0, score: 0, transition: false };
-let player = { x:100, y:0, w:32, h:44, dx:0, dy:0, ground:false, jumps:0, dead:false };
+// 实体
+let player = { x:100, y:0, w:32, h:40, dx:0, dy:0, ground:false, jumps:0, dead:false, inPipe:false };
 let input = { l:false, r:false, j:false, jLock:false };
+let camX = 0;
 let blocks = [];
 let enemies = [];
+let particles = [];
 let goal = null;
-let camX = 0;
-let frames = 0;
 
-// 音频
-function playTone(freq, type, dur) {
-    if(!audioCtx) return;
-    const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    osc.type = type; osc.frequency.setValueAtTime(freq, t);
-    g.gain.setValueAtTime(0.05, t); g.gain.exponentialRampToValueAtTime(0.001, t+dur);
-    osc.connect(g); g.connect(audioCtx.destination);
-    osc.start(t); osc.stop(t+dur);
+// 关卡风格
+const THEMES = [
+    { name: "PLAINS", bg: "#5C94FC", ground: "#C84C0C", brick: "#FFB74D" },
+    { name: "DESERT", bg: "#F4C430", ground: "#E65100", brick: "#FFECB3" },
+    { name: "CAVE",   bg: "#212121", ground: "#5D4037", brick: "#8D6E63" },
+    { name: "SKY",    bg: "#B3E5FC", ground: "#ffffff", brick: "#E1F5FE" }
+];
+
+// --- 2. 音频引擎 (强制BGM) ---
+function initAudio() {
+    if(!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if(audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+    // 启动 BGM 循环
+    if(bgmInterval) clearInterval(bgmInterval);
+    playBGM();
+    bgmInterval = setInterval(playBGM, 3200); // 循环播放
 }
 
-// 关卡生成
-function initLevel(idx) {
-    blocks = []; enemies = []; goal = null;
-    let theme = THEMES[idx % THEMES.length];
+function playTone(freq, type, dur, vol=0.1) {
+    if(!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type; osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + dur);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + dur);
+}
+
+function playBGM() {
+    if(!running || player.dead) return;
+    // 简单的低音循环
+    let base = 220 + (level*20);
+    let sequence = [0, 200, 400, 600, 800, 1000, 1200, 1400];
+    sequence.forEach((delay, i) => {
+        setTimeout(() => {
+            if(!running) return;
+            let f = (i%2==0) ? base : base * 1.5;
+            playTone(f, 'triangle', 0.15, 0.03);
+        }, delay);
+    });
+}
+
+// --- 3. 关卡生成 (怪物加量) ---
+function initLevel(lvl) {
+    blocks = []; enemies = []; particles = [];
+    let theme = THEMES[lvl % THEMES.length];
     
-    // 地面
-    blocks.push({x:-200, y:canvas.height-60, w:800, h:100, c: theme.block});
+    // 起跑线
+    blocks.push({x:-200, y:canvas.height-80, w:800, h:100, c: theme.ground});
     
     let x = 600;
-    // 关卡长度随难度增加
-    let endX = 3000 + idx * 500; 
+    let endX = 3000 + lvl * 500;
     
     while(x < endX) {
-        // 沟壑
-        if(Math.random() < 0.2) x += 120;
+        // 沟壑 (20% 概率)
+        if(Math.random() < 0.2) x += 150;
         
-        let w = 200 + Math.random()*300;
-        let h = 100;
-        blocks.push({x:x, y:canvas.height-60, w:w, h:h, c: theme.block});
+        let w = 400 + Math.random() * 400;
+        // 地面
+        blocks.push({x:x, y:canvas.height-80, w:w, h:100, c: theme.ground});
         
-        // 障碍物/平台
-        if(Math.random() < 0.7) {
-            let by = canvas.height - 180 - Math.random()*100;
-            blocks.push({x:x+50, y:by, w:80, h:30, c: theme.block});
-            // 怪物
-            if(Math.random() < 0.3) {
-                enemies.push({x:x+80, y:canvas.height-100, w:36, h:36, dx:-1.5, type: idx%3, dead:false});
+        // --- 怪物生成 (高密度) ---
+        // 只要这个平台够宽，就必定放怪物
+        if(w > 300) {
+            let enemyCount = 1 + Math.floor(Math.random() * 2); // 1~3个怪物
+            for(let i=0; i<enemyCount; i++) {
+                let ex = x + 100 + Math.random() * (w-200);
+                enemies.push({
+                    x: ex, y: canvas.height-120, w:36, h:36, 
+                    dx: -1 - Math.random(), // 随机速度
+                    type: Math.floor(Math.random()*3),
+                    dead: false
+                });
             }
         }
+        
+        // 砖块
+        if(Math.random() < 0.6) {
+            let by = canvas.height - 200 - Math.random()*50;
+            blocks.push({x:x+50, y:by, w:100, h:30, c: theme.brick});
+        }
+        
         x += w;
     }
     
-    // 终点
-    goal = { x: x+200, y: canvas.height-160, w: 80, h: 100 };
-    blocks.push({x: x+100, y: canvas.height-60, w: 300, h: 100, c: theme.block});
+    // 终点管子
+    // 管子底座
+    blocks.push({x:x, y:canvas.height-80, w:500, h:100, c: theme.ground});
+    // 管子实体
+    goal = {
+        x: x + 200,
+        y: canvas.height - 180, // 管子顶部高度
+        w: 70, 
+        h: 100,
+        cx: x + 200 + 35 // 中心点
+    };
     
-    player.x = 100; player.y = 0; player.dx=0; player.dy=0; player.dead=false; 
-    state.transition = false; camX = 0;
+    player.x = 100; player.y = 0; player.dx=0; player.dy=0;
+    player.inPipe = false; player.dead = false;
+    camX = 0;
 }
 
+// --- 游戏循环 ---
 function update() {
     if(!running) return;
     frames++;
-    
-    // --- 钻管动画 ---
-    if(state.transition) {
-        player.y += 3;
+
+    // --- 4. 钻管逻辑 (特效修复) ---
+    if(player.inPipe) {
+        // 自动移向中心
+        player.x += (goal.cx - player.x - player.w/2) * 0.2;
+        // 下潜
+        player.y += 2;
+        // 变小
+        if(player.w > 0) player.w -= 0.5;
+        
+        playTone(100 - player.y/5, 'sawtooth', 0.1); // 钻管音效
+
         if(player.y > canvas.height) {
-            state.level++;
-            initLevel(state.level);
+            level++;
+            initLevel(level);
         }
         draw();
         requestAnimationFrame(update);
         return;
     }
 
-    // --- 物理计算 (V27 减速版) ---
+    // --- 物理更新 ---
     if(input.r) player.dx += PHYSICS.acc;
     else if(input.l) player.dx -= PHYSICS.acc;
-    else player.dx *= PHYSICS.friction;
+    else player.dx *= PHYSICS.fric;
     
-    // 限制最大速度
-    if(player.dx > PHYSICS.maxSpd) player.dx = PHYSICS.maxSpd;
-    if(player.dx < -PHYSICS.maxSpd) player.dx = -PHYSICS.maxSpd;
+    if(player.dx > PHYSICS.spd) player.dx = PHYSICS.spd;
+    if(player.dx < -PHYSICS.spd) player.dx = -PHYSICS.spd;
     
     // 跳跃
     if(input.j && !input.jLock) {
-        let jumped = false;
         if(player.ground) {
-            player.dy = PHYSICS.jumpForce; player.jumps=1; jumped=true;
-            playTone(200, 'square', 0.1);
-        } else if(player.jumps > 0 && player.jumps < 3) {
-            player.dy = PHYSICS.jumpForce * 0.9; player.jumps++; jumped=true;
-            playTone(400, 'sawtooth', 0.15); // 二段跳音效
+            player.dy = PHYSICS.jump; player.jumps = 1; input.jLock = true;
+            playTone(300, 'square', 0.1);
+        } else if(player.jumps > 0 && player.jumps < 2) { // 二段跳
+            player.dy = PHYSICS.jump * 0.9; player.jumps++; input.jLock = true;
+            playTone(500, 'square', 0.1);
+            // 粒子
+            for(let i=0; i<5; i++) particles.push({x:player.x+16, y:player.y+40, dx:(Math.random()-0.5)*5, dy:Math.random()*5, life:20});
         }
-        if(jumped) input.jLock = true;
     }
     if(!input.j) input.jLock = false;
 
-    player.dy += PHYSICS.gravity;
+    player.dy += PHYSICS.grav;
     player.x += player.dx;
     player.y += player.dy;
     
-    // 摄像机跟随
-    camX += (player.x - canvas.width*0.35 - camX) * 0.1;
+    // 摄像机
+    camX += (player.x - canvas.width*0.3 - camX) * 0.1;
     
-    // 掉落死亡
+    // 死亡
     if(player.y > canvas.height + 100) gameOver();
 
-    // 碰撞检测
+    // 碰撞
     player.ground = false;
+    
+    // 地面检测
     blocks.forEach(b => {
-        if(b.x > camX+canvas.width || b.x+b.w < camX) return;
         if(colCheck(player, b)) {
-            // 简单的 AABB 响应
-            let pBottom = player.y + player.h;
-            let bBottom = b.y + b.h;
-            // 触地
-            if(player.dy >= 0 && pBottom - player.dy <= b.y + 10) {
+            let pBot = player.y + player.h;
+            // 踩地
+            if(player.dy >= 0 && pBot - player.dy <= b.y + 20) {
                 player.y = b.y - player.h; player.dy = 0; player.ground = true; player.jumps = 0;
-            } 
-            // 撞头
-            else if(player.dy < 0 && player.y - player.dy >= bBottom - 10) {
-                player.y = bBottom; player.dy = 0;
             }
-            // 侧向
+            // 撞头
+            else if(player.dy < 0 && player.y - player.dy >= b.y + b.h - 10) {
+                player.y = b.y + b.h; player.dy = 0;
+            }
+            // 侧撞
             else if(player.dx > 0) { player.x = b.x - player.w; player.dx = 0; }
             else if(player.dx < 0) { player.x = b.x + b.w; player.dx = 0; }
         }
     });
-    
-    // 怪物
+
+    // 终点碰撞 (修复版)
+    if(goal) {
+        // 检测是否站在管子上
+        if(player.x + player.w > goal.x && player.x < goal.x + goal.w) {
+            if(Math.abs((player.y + player.h) - goal.y) < 5 && player.dy >= 0) {
+                player.y = goal.y - player.h;
+                player.ground = true;
+                player.dy = 0;
+                player.jumps = 0;
+                
+                // 触发过关 (只要站上去等一会儿)
+                if(Math.abs(player.dx) < 0.5) {
+                    player.inPipe = true;
+                    playTone(600, 'sine', 0.5); // 成功音
+                }
+            }
+        }
+        // 管身阻挡
+        if(colCheck(player, {x:goal.x, y:goal.y+10, w:goal.w, h:goal.h})) {
+            if(player.dx > 0) player.x = goal.x - player.w;
+        }
+    }
+
+    // 怪物逻辑
     enemies.forEach(e => {
         if(e.dead) return;
         e.x += e.dx;
-        if(frames % 100 === 0) e.dx *= -1;
+        if(frames % 60 === 0 && Math.random() < 0.2) e.dx *= -1; // 随机转向
         
         if(colCheck(player, e)) {
-            // 踩踏判定
+            // 踩死
             if(player.dy > 0 && player.y + player.h < e.y + e.h * 0.7) {
-                e.dead = true; player.dy = -6; state.score += 100;
-                playTone(600, 'sine', 0.1);
+                e.dead = true; player.dy = -8; score += 200;
+                playTone(800, 'sawtooth', 0.1);
             } else {
                 gameOver();
             }
         }
     });
 
-    // 终点检测
-    if(goal && colCheck(player, goal)) {
-        if(player.ground && Math.abs(player.x - goal.x) < 20) {
-            state.transition = true;
-            playTone(800, 'sine', 0.5);
-        }
-    }
-
     draw();
-    loopId = requestAnimationFrame(update);
+    requestAnimationFrame(update);
 }
 
 function colCheck(a, b) {
@@ -311,140 +354,132 @@ function colCheck(a, b) {
 }
 
 function gameOver() {
-    player.dead = true;
+    running = false;
     document.getElementById('menu').style.display = 'flex';
     document.querySelector('#menu h1').innerText = "GAME OVER";
 }
 
 function draw() {
-    // 0. 清屏 & 背景
-    let theme = THEMES[state.level % THEMES.length];
+    let theme = THEMES[level % THEMES.length];
+    
+    // 背景
     ctx.fillStyle = theme.bg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // 1. 砖块
+    // 砖块
     blocks.forEach(b => {
         if(b.x > camX+canvas.width || b.x+b.w < camX) return;
         ctx.fillStyle = b.c;
         ctx.fillRect(b.x-camX, b.y, b.w, b.h);
-        ctx.lineWidth = 2; ctx.strokeStyle = "rgba(0,0,0,0.1)"; 
-        ctx.strokeRect(b.x-camX, b.y, b.w, b.h);
+        ctx.lineWidth = 2; ctx.strokeStyle = "rgba(0,0,0,0.1)"; ctx.strokeRect(b.x-camX, b.y, b.w, b.h);
     });
 
-    // 2. 终点管子
-    if(goal) {
-        let gx = goal.x - camX;
-        ctx.fillStyle = "#43A047";
-        ctx.fillRect(gx, goal.y, goal.w, goal.h); // 管身
-        ctx.fillRect(gx-10, goal.y, goal.w+20, 30); // 管口
-        ctx.fillStyle = "#fff"; ctx.font="16px Arial"; ctx.fillText("GOAL", gx+18, goal.y+60);
-    }
-
-    // 3. 怪物
+    // 怪物
     enemies.forEach(e => {
         if(e.dead || e.x > camX+canvas.width || e.x+e.w < camX) return;
-        ctx.fillStyle = ["#E53935", "#8E24AA", "#3949AB"][e.type];
-        ctx.fillRect(e.x-camX, e.y, e.w, e.h);
+        let c = ['#E53935', '#43A047', '#5E35B1'][e.type];
+        ctx.fillStyle = c;
+        let jumpOff = Math.abs(Math.sin(frames*0.1)) * 5;
+        ctx.fillRect(e.x-camX, e.y - jumpOff, e.w, e.h);
         // 眼睛
         ctx.fillStyle = "#fff";
-        ctx.fillRect(e.x-camX+5, e.y+10, 8, 8);
-        ctx.fillRect(e.x-camX+e.w-13, e.y+10, 8, 8);
+        ctx.fillRect(e.x-camX + (e.dx<0?5:20), e.y - jumpOff + 10, 8, 8);
+    });
+    
+    // 粒子
+    particles.forEach((p, i) => {
+        p.x += p.dx; p.y += p.dy; p.life--;
+        ctx.fillStyle = `rgba(255,200,0,${p.life/20})`;
+        ctx.fillRect(p.x-camX, p.y, 6, 6);
+        if(p.life<=0) particles.splice(i, 1);
     });
 
-    // 4. 玩家 (V27 重绘：防止颠倒，结构清晰)
+    // 玩家 (如果在钻管，要画在管子后面？不，先画玩家，再画管子前盖)
     let px = player.x - camX;
     let py = player.y;
     
-    // 火箭喷射 (二段跳/三段跳)
-    if(player.jumps > 0 && player.dy < 0) {
-        ctx.fillStyle = (frames%6<3) ? "#FFC107" : "#FF5722";
-        ctx.beginPath();
-        ctx.moveTo(px+10, py+player.h);
-        ctx.lineTo(px+player.w-10, py+player.h);
-        ctx.lineTo(px+player.w/2, py+player.h+15);
-        ctx.fill();
-    }
-    
-    // 腿部动画 (限制幅度，防止穿模倒立)
-    let legOffset = 0;
-    if(player.ground && Math.abs(player.dx) > 0.1) {
-        legOffset = Math.sin(frames * 0.8) * 5; 
-    }
-
-    // 绘制身体 (从上到下，绝对坐标)
-    // 帽子
-    ctx.fillStyle = "#D84315"; 
-    ctx.fillRect(px, py, player.w, 10);
-    // 脸
-    ctx.fillStyle = "#FFCCBC";
-    ctx.fillRect(px+4, py+10, player.w-8, 10);
-    // 身体
-    ctx.fillStyle = "#1565C0";
-    ctx.fillRect(px, py+20, player.w, 14);
-    // 腿 (左右脚)
-    ctx.fillStyle = "#5D4037";
-    ctx.fillRect(px+4, py+34 + legOffset, 10, 10); // 左脚
-    ctx.fillRect(px+player.w-14, py+34 - legOffset, 10, 10); // 右脚
-    
-    // UI更新
-    document.getElementById('score-ui').innerText = `SCORE: ${state.score}`;
-    document.getElementById('world-ui').innerText = `WORLD 1-${state.level+1} (${theme.name})`;
-}
-
-// --- 适配逻辑 ---
-function checkDevice() {
-    // 只有在真的是手机，且真的是竖屏时，才阻断游戏
-    if(isMobile && window.innerHeight > window.innerWidth) {
-        document.getElementById('rotate-hint').style.display = 'flex';
-        document.getElementById('game-container').style.display = 'none';
-        if(running) running = false;
-    } else {
-        document.getElementById('rotate-hint').style.display = 'none';
-        document.getElementById('game-container').style.display = 'block';
-        resize();
-        if(!running && !player.dead && frames > 0) {
-            running = true; update();
+    if(!player.dead) {
+        ctx.fillStyle = "#F44336"; // 红帽子
+        ctx.fillRect(px, py, player.w, 10);
+        ctx.fillStyle = "#FFCC80"; // 脸
+        ctx.fillRect(px, py+10, player.w, 10);
+        ctx.fillStyle = "#1565C0"; // 蓝衣服
+        ctx.fillRect(px, py+20, player.w, player.h-20);
+        
+        // 跑动腿
+        if(player.ground && Math.abs(player.dx)>0.1) {
+            let leg = Math.sin(frames*0.5)*5;
+            ctx.fillStyle="#000";
+            ctx.fillRect(px+5+leg, py+player.h-5, 8, 5);
         }
     }
-}
-function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-window.addEventListener('resize', () => setTimeout(checkDevice, 100));
-setInterval(checkDevice, 1000); // 轮询检查
 
+    // 终点管子 (分层绘制，实现钻入效果)
+    if(goal) {
+        let gx = goal.x - camX;
+        // 1. 管子后壁 (略)
+        // 2. 管子前盖 (遮挡玩家)
+        ctx.fillStyle = "#2E7D32"; // 深绿
+        ctx.fillRect(gx, goal.y, goal.w, goal.h); 
+        ctx.fillStyle = "#4CAF50"; // 亮绿管口
+        ctx.fillRect(gx-5, goal.y, goal.w+10, 30);
+        
+        // 文字
+        ctx.fillStyle = "#fff"; ctx.font = "bold 20px Arial";
+        ctx.fillText("GOAL", gx+10, goal.y+80);
+    }
+
+    // HUD
+    document.getElementById('score-ui').innerText = `SCORE: ${score}`;
+    document.getElementById('world-ui').innerText = `WORLD 1-${level+1}`;
+}
+
+// 启动
 function startGame() {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    initAudio(); // 核心：用户交互触发音频
     document.getElementById('menu').style.display = 'none';
-    state.level = 0; state.score = 0;
+    level = 0; score = 0;
     initLevel(0);
     running = true;
-    checkDevice();
-    if(!loopId) update();
+    update();
 }
 
-// 触摸控制
+// 适配
+function checkOrient() {
+    if(isMobile && window.innerHeight > window.innerWidth) {
+        document.getElementById('rotate-hint').style.display = 'flex';
+        running = false;
+    } else {
+        document.getElementById('rotate-hint').style.display = 'none';
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        if(!running && frames > 0 && !player.dead) running = true;
+    }
+}
+window.addEventListener('resize', checkOrient);
+setInterval(checkOrient, 500);
+
+// 触屏
 if(isMobile) {
     document.getElementById('controls').style.display = 'block';
-    const bindBtn = (id, key) => {
-        let btn = document.getElementById(id);
-        btn.addEventListener('touchstart', (e)=>{ e.preventDefault(); input[key]=true; });
-        btn.addEventListener('touchend', (e)=>{ e.preventDefault(); input[key]=false; });
+    const b = (id, k) => {
+        let el = document.getElementById(id);
+        el.addEventListener('touchstart', e=>{e.preventDefault(); input[k]=true;});
+        el.addEventListener('touchend', e=>{e.preventDefault(); input[k]=false;});
     };
-    bindBtn('btn-L', 'l'); bindBtn('btn-R', 'r'); bindBtn('btn-J', 'j');
+    b('btn-L', 'l'); b('btn-R', 'r'); b('btn-J', 'j');
 }
 
-// 键盘控制
-window.addEventListener('keydown', e => {
-    if(e.key==='a' || e.key==='ArrowLeft') input.l = true;
-    if(e.key==='d' || e.key==='ArrowRight') input.r = true;
-    if(e.key==='w' || e.key===' ' || e.key==='ArrowUp') input.j = true;
+// 键盘
+window.addEventListener('keydown', e=>{
+    if(e.key==='a'||e.key==='ArrowLeft') input.l=true;
+    if(e.key==='d'||e.key==='ArrowRight') input.r=true;
+    if(e.key==='w'||e.key===' ') input.j=true;
 });
-window.addEventListener('keyup', e => {
-    if(e.key==='a' || e.key==='ArrowLeft') input.l = false;
-    if(e.key==='d' || e.key==='ArrowRight') input.r = false;
-    if(e.key==='w' || e.key===' ' || e.key==='ArrowUp') input.j = false;
+window.addEventListener('keyup', e=>{
+    if(e.key==='a'||e.key==='ArrowLeft') input.l=false;
+    if(e.key==='d'||e.key==='ArrowRight') input.r=false;
+    if(e.key==='w'||e.key===' ') input.j=false;
 });
 
 </script>
