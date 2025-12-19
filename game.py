@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V34 Control Fix",
+    page_title="Super AI Kart: V35 Physics Update",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -50,17 +50,12 @@ game_html = """
         background: rgba(0,0,0,0.85); z-index: 100;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
-    /* 按钮容器 */
     .btn-container { display: flex; gap: 20px; margin-top: 20px; }
-    
     .start-btn {
         padding: 15px 40px; font-size: 24px; background: #FF3D00; color: white;
         border: 4px solid #fff; cursor: pointer; border-radius: 8px; font-weight: bold;
     }
-    .retry-btn {
-        background: #00E676; /* 绿色按钮用于重试 */
-    }
-    
+    .retry-btn { background: #00E676; }
     #menu h1 { color:#fff; margin-bottom:10px; text-shadow:4px 4px 0 #f00; font-size: 48px; }
     #menu p { color:#ccc; margin-bottom:20px; font-size: 18px; }
 </style>
@@ -81,8 +76,7 @@ game_html = """
 
     <div id="menu">
         <h1 id="menu-title">SUPER AI KART</h1>
-        <p id="menu-sub">V34: Manual Kart & Retry</p>
-        
+        <p id="menu-sub">V35: Eye-Care & Physics</p>
         <div class="btn-container">
             <button id="btn-retry" class="start-btn retry-btn" onclick="retryLevel()" style="display:none;">TRY AGAIN</button>
             <button id="btn-start" class="start-btn" onclick="resetGame()">START GAME</button>
@@ -95,7 +89,6 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d', { alpha: false });
 const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-// 物理参数
 const PHYSICS = isMobile ? 
     { spd: 2.2, acc: 0.1, fric: 0.60, jump: -11, grav: 0.55 } : 
     { spd: 7.0, acc: 0.8, fric: 0.80, jump: -12, grav: 0.60 };
@@ -121,10 +114,15 @@ let items = [];
 let goal = null;
 
 const BIOMES = [
+    // 0: 平原
     { name: "PLAINS", bg: "#5C94FC", ground: "#C84C0C", brick: "#FFB74D", pipe: "#00E676", fricMod: 1.0 },
-    { name: "DESERT", bg: "#F4C430", ground: "#E65100", brick: "#FFECB3", pipe: "#2E7D32", fricMod: 1.0 },
+    // 1: 沙漠 (颜色大改：去掉了刺眼的亮黄，改为柔和的杏仁色/落日风)
+    { name: "DESERT", bg: "#FFE0B2", ground: "#EF6C00", brick: "#FFCC80", pipe: "#2E7D32", fricMod: 1.0 },
+    // 2: 洞穴
     { name: "CAVE",   bg: "#212121", ground: "#5D4037", brick: "#8D6E63", pipe: "#66BB6A", fricMod: 1.0 },
+    // 3: 雪地
     { name: "SNOW",   bg: "#81D4FA", ground: "#E1F5FE", brick: "#B3E5FC", pipe: "#0288D1", fricMod: 0.2 }, 
+    // 4: 山川
     { name: "HILLS",  bg: "#C5E1A5", ground: "#33691E", brick: "#AED581", pipe: "#558B2F", fricMod: 1.0 }
 ];
 
@@ -165,7 +163,6 @@ function initLevel(lvl) {
     player.inPipe = false; player.dead = false;
     camX = 0;
 
-    // 起点
     blocks.push({x:-200, y:canvas.height-80, w:800, h:100, c: t.ground, type:'ground'}); 
     
     let x = 600;
@@ -206,6 +203,7 @@ function initLevel(lvl) {
             else if(rng < 0.65) content = "kart";
 
             blocks.push({ x:bx, y:by, w:60, h:60, c: content?"#FFD700":t.brick, type:'brick', content:content, hit:false });
+            // 确保砖块旁边有空间让蘑菇掉下来，或者连成片
             blocks.push({x:bx+60, y:by, w:60, h:60, c: t.brick, type:'brick', content:null});
             blocks.push({x:bx-60, y:by, w:60, h:60, c: t.brick, type:'brick', content:null});
         }
@@ -224,7 +222,22 @@ function spawnItem(block) {
     if(block.content === "mushroom") type = 1;
     if(block.content === "kart") type = 2;
 
-    items.push({ x: block.x + 15, y: block.y, w: 30, h: 30, type: type, dy: -5, targetY: block.y - 35 });
+    // 道具出生设定：
+    // 金币(type 0) 直接弹一下消失
+    // 蘑菇/赛车(type 1,2) 弹出来后会落地并移动
+    let isMovingItem = (type !== 0);
+    
+    items.push({ 
+        x: block.x + 15, 
+        y: block.y, 
+        w: 30, h: 30, 
+        type: type, 
+        dy: -6, // 向上弹起
+        dx: isMovingItem ? 2 : 0, // 只有蘑菇会横向移动
+        targetY: block.y - 35, // 仅用于动画阶段判断
+        state: 'spawning' // 状态机：spawning -> moving
+    });
+
     playTone(500, 'square', 0.1);
     for(let i=0;i<5;i++) particles.push({x:block.x+30, y:block.y+60, dx:(Math.random()-0.5)*5, dy:Math.random()*5, life:15, c:"#FFD700"});
 
@@ -256,29 +269,19 @@ function update() {
 
     let t = BIOMES[level % BIOMES.length];
     let friction = (isMobile ? 0.6 : 0.8);
-    // 雪地特别滑
     if(t.name === "SNOW") friction = 0.96;
 
-    // --- 1. 赛车操控修复 (Kart Control Fix) ---
-    // 之前是 player.dx = 8 强制赋值，现在改为受控加速
     if(player.kart) {
-        let kAcc = 1.5; // 赛车加速极快
-        let kMax = 12.0; // 赛车极速更高
-        
+        let kAcc = 1.5; let kMax = 12.0; 
         if(input.r) player.dx += kAcc;
         else if(input.l) player.dx -= kAcc;
-        else player.dx *= 0.9; // 赛车松油门减速也快
-        
-        // 限制极速
+        else player.dx *= 0.9; 
         if(player.dx > kMax) player.dx = kMax;
         if(player.dx < -kMax) player.dx = -kMax;
-        
     } else {
-        // 普通模式物理
         if(input.r) player.dx += PHYSICS.acc;
         else if(input.l) player.dx -= PHYSICS.acc;
         else player.dx *= friction; 
-        
         if(player.dx > PHYSICS.spd) player.dx = PHYSICS.spd;
         if(player.dx < -PHYSICS.spd) player.dx = -PHYSICS.spd;
     }
@@ -320,16 +323,55 @@ function update() {
         }
     });
 
+    // --- 道具物理更新 (Item Physics Loop) ---
     items.forEach((it, i) => {
-        if(it.dy < 0 || it.y < it.targetY) {
-            it.y += it.dy; if(it.dy < 0) it.dy += 0.5; if(it.y >= it.targetY && it.dy > 0) it.dy = 0;
+        // 如果是金币，向上飘一下就没了
+        if(it.type === 0) {
+            it.y += it.dy;
+            if(it.y < it.targetY) items.splice(i, 1); // 消失，已经加过分了在碰撞里做? 不，金币碰玩家才算
+            // 修正：金币逻辑。为了简单，金币碰砖块出的时候直接算分特效，然后道具列表里移除，或者让它飞一下。
+            // 这里让它飞一下再检测碰撞太麻烦，直接让它在生成时如果是金币，稍微飞一下然后玩家吸附或者直接加分。
+            // 简单化：金币还是悬浮吧，或者直接给分。
+            // 修正逻辑：金币保持原样悬浮，蘑菇才掉落。
+            if(it.dy < 0) { it.y += it.dy; it.dy += 0.5; } // 简单的弹跳
+        } else {
+            // 蘑菇/赛车逻辑
+            if(it.state === 'spawning') {
+                it.y += it.dy;
+                if(it.dy < 0) it.dy += 0.5; // 减速上升
+                if(it.dy >= 0) it.state = 'moving'; // 开始下落移动
+            } else {
+                // 移动状态：受重力，检测碰撞
+                it.dy += 0.5; // 重力
+                it.x += it.dx;
+                it.y += it.dy;
+
+                // 道具与地形碰撞
+                blocks.forEach(b => {
+                    if(colCheck(it, b)) {
+                        // 落地
+                        if(it.dy > 0 && it.y < b.y + 20) {
+                            it.y = b.y - it.h;
+                            it.dy = 0;
+                        }
+                        // 撞墙反弹
+                        else if(it.x < b.x + b.w && it.x + it.w > b.x) {
+                            it.dx *= -1;
+                        }
+                    }
+                });
+            }
         }
+
         if(colCheck(player, it)) {
             items.splice(i, 1); 
             if(it.type === 0) { score += 100; playTone(800, 'sine', 0.1); }
             else if(it.type === 1) { score += 500; player.big = true; player.w = 40; player.h = 56; playTone(200, 'square', 0.3); }
             else if(it.type === 2) { score += 1000; player.kart = true; player.timer = 600; player.w = 48; player.h = 24; playTone(100, 'sawtooth', 0.5); }
         }
+        
+        // 掉出地图
+        if(it.y > canvas.height + 100) items.splice(i, 1);
     });
 
     enemies.forEach(e => {
@@ -369,7 +411,6 @@ function colCheck(a, b) {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
-// --- 2. 游戏结束界面与重生逻辑 ---
 function gameOver() {
     running = false;
     let menu = document.getElementById('menu');
@@ -379,38 +420,26 @@ function gameOver() {
     let startBtn = document.getElementById('btn-start');
 
     menu.style.display = 'flex';
-    title.innerText = "GAME OVER";
-    title.style.color = "#FF3D00";
+    title.innerText = "GAME OVER"; title.style.color = "#FF3D00";
     sub.innerText = "World " + (level+1) + " Score: " + score;
-    
-    // 显示重试按钮
-    retryBtn.style.display = 'block';
-    startBtn.innerText = "MAIN MENU";
+    retryBtn.style.display = 'block'; startBtn.innerText = "MAIN MENU";
 }
 
 function resetGame() {
-    // 回到主菜单/从头开始
-    initAudio();
-    level = 0; score = 0;
-    // 重置按钮状态
+    initAudio(); level = 0; score = 0;
     document.getElementById('btn-retry').style.display = 'none';
     document.getElementById('btn-start').innerText = "START GAME";
-    
     startGame();
 }
 
 function retryLevel() {
-    // 重新开始当前关卡
-    initAudio();
-    // 玩家状态重置（变小）但保留关卡数
-    startGame();
+    initAudio(); startGame();
 }
 
 function startGame() {
     document.getElementById('menu').style.display = 'none';
-    // 重置玩家核心状态
     player.big = false; player.kart = false; 
-    initLevel(level); // 重新生成当前关卡
+    initLevel(level);
     running = true;
     update();
 }
