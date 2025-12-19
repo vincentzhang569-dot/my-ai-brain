@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V39 Visuals & Bosses",
+    page_title="Super AI Kart: V40 Stacking Mushrooms",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -30,6 +30,7 @@ game_html = """
     .hud { position: absolute; top: 20px; color: #fff; font-size: 20px; font-weight: 800; text-shadow: 2px 2px 0 #000; pointer-events: none; letter-spacing: 1px; }
     #score-ui { left: 20px; background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 10px; }
     #world-ui { right: 20px; color: #FFD700; background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 10px; }
+    #hp-ui { top: 60px; left: 20px; color: #FF5252; font-size: 18px; }
     
     #boss-ui { 
         position: absolute; top: 80px; left: 50%; transform: translateX(-50%); 
@@ -78,6 +79,7 @@ game_html = """
     <canvas id="c"></canvas>
     <div id="score-ui" class="hud">SCORE: 0</div>
     <div id="world-ui" class="hud">WORLD 1-1</div>
+    <div id="hp-ui" class="hud">HP: 1</div>
     
     <div id="boss-ui">
         <div id="boss-name">BOSS</div>
@@ -92,7 +94,7 @@ game_html = """
 
     <div id="menu">
         <h1 id="menu-title">SUPER AI KART</h1>
-        <p id="menu-sub">V39: 3D Visuals & Boss Roster</p>
+        <p id="menu-sub">V40: Mushroom Stacking Update</p>
         <div class="btn-container">
             <button id="btn-retry" class="start-btn" onclick="retryLevel()" style="display:none; background: #4CAF50;">RETRY</button>
             <button id="btn-start" class="start-btn" onclick="resetGame()">PLAY</button>
@@ -117,7 +119,14 @@ let level = 0;
 let audioCtx = null;
 let bgmTimer = null;
 
-let player = { x:100, y:0, w:32, h:40, dx:0, dy:0, ground:false, jumps:0, dead:false, inPipe:false, big:false, kart:false, timer:0, invul:0, facing:1 };
+// Player now has HP instead of just big/small
+let player = { 
+    x:100, y:0, w:32, h:40, dx:0, dy:0, 
+    ground:false, jumps:0, dead:false, inPipe:false, 
+    hp: 1, // 1=Small, 2=Big, 3+=Stacked
+    kart:false, timer:0, invul:0, facing:1 
+};
+
 let input = { l:false, r:false, j:false, jLock:false };
 let camX = 0;
 let blocks = [];
@@ -141,7 +150,7 @@ function initAudio() {
     if(audioCtx.state === 'suspended') audioCtx.resume();
     if(bgmTimer) clearInterval(bgmTimer);
     playBGM();
-    bgmTimer = setInterval(playBGM, 150); // Faster tick for melody sequencing
+    bgmTimer = setInterval(playBGM, 150);
 }
 
 let melodyStep = 0;
@@ -157,20 +166,18 @@ function playTone(f, t, d, v=0.1) {
 
 const MELODIES = {
     peace: [330,0,392,0,523,0,392,0,330,0,262,0],
-    boss1: [110,110,0,105,105,0,100,100,0,95,95,0], // Heavy
-    boss2: [880,0,440,0,880,0,440,0,830,0,415,0],   // Fast/Ninja
-    boss3: [220,220,294,294,330,330,294,294],       // Epic
+    boss1: [110,110,0,105,105,0,100,100,0,95,95,0],
+    boss2: [880,0,440,0,880,0,440,0,830,0,415,0],
+    boss3: [220,220,294,294,330,330,294,294],
     kart:  [440,440,554,659,440,554,659,880]
 };
 
 function playBGM() {
     if(!running || player.dead) return;
     melodyStep++;
-    
-    // Choose track
     let track = MELODIES.peace;
     let wave = 'triangle';
-    let tempo = 2; // mod 2 = slow
+    let tempo = 2;
     
     if(boss && !boss.dead && boss.x < camX + canvas.width + 100) {
         if(boss.style === 0) { track = MELODIES.boss1; wave='sawtooth'; tempo=2; }
@@ -192,7 +199,9 @@ function initLevel(lvl) {
     let t = BIOMES[lvl % BIOMES.length];
     
     player.x = 100; player.y = 0; player.dx=0; player.dy=0;
-    player.w = player.big ? 40 : 32; player.h = player.big ? 56 : 40; 
+    // HP Persists between levels, but size resets to physics body dimensions
+    player.w = player.hp > 1 ? 40 : 32; 
+    player.h = player.hp > 1 ? 56 : 40; 
     player.inPipe = false; player.dead = false; player.invul = 0;
     camX = 0;
     document.getElementById('boss-ui').style.display = 'none';
@@ -205,26 +214,24 @@ function initLevel(lvl) {
     
     while(x < endX) {
         let rng = Math.random();
-        
-        // Random Coin Arrays
         if(Math.random() < 0.25) {
             let cy = groundY - 120 - Math.random()*80;
             for(let k=0; k<4; k++) items.push({ x: x + k*35, y: cy + Math.sin(k)*20, w:30, h:30, type:0, dy:0, dx:0, state:'static' });
         }
 
-        if(rng < 0.4) { // Flat + Enemies
+        if(rng < 0.4) { 
             let w = 400 + Math.random() * 400;
             blocks.push({x:x, y:groundY, w:w, h:200, c: t.ground, type:'ground'});
             if(Math.random() < 0.7) spawnEnemy(x + w/2, groundY-40, (Math.random()<0.3)?'jumper':'walker');
             createBricks(x + 100, groundY - 140, t);
             x += w;
         } 
-        else if(rng < 0.6) { // Pits + Flyers
+        else if(rng < 0.6) {
             let gap = 140 + Math.random() * 60;
             spawnEnemy(x + gap/2, groundY - 150 - Math.random()*100, 'flyer');
             x += gap; 
         }
-        else if(rng < 0.8) { // Platforms
+        else if(rng < 0.8) {
             let steps = 3 + Math.floor(Math.random()*3);
             let platW = 150;
             for(let i=0; i<steps; i++) {
@@ -236,22 +243,20 @@ function initLevel(lvl) {
             x += platW;
             if(Math.random() < 0.5) x += 80;
         }
-        else { // Pipes + Drillers
+        else {
             let w = 300;
             blocks.push({x:x, y:groundY, w:w, h:200, c: t.ground, type:'ground'});
             let ph = 60 + Math.random()*60;
             let px = x + 100;
             blocks.push({x:px, y:groundY-ph, w:60, h:ph, c: t.pipe, type:'pipe'});
-            spawnEnemy(px+10, groundY-ph, 'drill'); // Changed from 'plant' to 'drill'
+            spawnEnemy(px+10, groundY-ph, 'drill'); 
             x += w;
         }
     }
     
-    // BOSS ARENA & GENERATION
     blocks.push({x:x, y:groundY, w:1000, h:100, c: t.ground, type:'ground'});
     
-    // Choose Boss Style
-    let bossStyle = lvl % 3; // 0: Titan, 1: Ninja, 2: Gold
+    let bossStyle = lvl % 3;
     let bossProps = {
         0: { name: "IRON TITAN", color: "#D32F2F", w:90, h:90, hp:3, spd:2 },
         1: { name: "SHADOW NINJA", color: "#7B1FA2", w:60, h:60, hp:3, spd:6 },
@@ -275,7 +280,7 @@ function createBricks(bx, by, t) {
     let rng = Math.random();
     let content = null;
     if(rng < 0.6) content = "coin";
-    else if(rng < 0.8) content = "mushroom";
+    else if(rng < 0.8) content = "mushroom"; // Stacking mushroom
     else if(rng < 0.9) content = "kart";
     
     blocks.push({ x:bx, y:by, w:60, h:60, c: t.brick, type:'brick', content:content, hit:false });
@@ -305,14 +310,12 @@ function update() {
     frames++;
     if(player.invul > 0) player.invul--;
 
-    // Player Physics
     if(player.kart) {
         player.timer--;
-        if(player.timer <= 0) { player.kart = false; player.w = player.big?40:32; playTone(150,'sawtooth',0.5); }
+        if(player.timer <= 0) { player.kart = false; player.w = player.hp>1?40:32; playTone(150,'sawtooth',0.5); }
         if(input.r) player.dx += 1.5; else if(input.l) player.dx -= 1.5; else player.dx *= 0.9;
         if(player.dx > 12) player.dx = 12; if(player.dx < -12) player.dx = -12;
     } else {
-        let t = BIOMES[level % BIOMES.length];
         let friction = isMobile ? 0.6 : 0.8;
         if(input.r) { player.dx += PHYSICS.acc; player.facing=1; } 
         else if(input.l) { player.dx -= PHYSICS.acc; player.facing=-1; } 
@@ -320,7 +323,7 @@ function update() {
         if(player.dx > PHYSICS.spd) player.dx = PHYSICS.spd; if(player.dx < -PHYSICS.spd) player.dx = -PHYSICS.spd;
     }
     
-    if(input.j && !input.jLock) {
+    if(input.j && !input.jLock && !player.inPipe) {
         if(player.ground || (player.jumps > 0 && player.jumps < (player.kart?999:3))) { 
             player.dy = (player.ground ? PHYSICS.jump : PHYSICS.jump*0.9); 
             player.jumps++; input.jLock=true; playTone(330,'square',0.1); 
@@ -331,10 +334,15 @@ function update() {
     player.dy += PHYSICS.grav; player.x += player.dx; player.y += player.dy;
     if(player.kart && player.y > canvas.height-100) { player.y = canvas.height-100; player.dy=0; player.ground=true; }
     camX += (player.x - canvas.width*0.3 - camX) * 0.1; if(camX<0) camX=0;
-    if(player.y > canvas.height+100 && !player.kart) gameOver();
+    if(player.y > canvas.height+100 && !player.kart && !player.inPipe) gameOver();
 
     player.ground = false;
+    
+    // --- COLLISION LOGIC ---
     blocks.forEach(b => {
+        // If in pipe, IGNORE collisions to prevent sticking
+        if(player.inPipe) return; 
+
         if(colCheck(player, b)) {
             if(player.dy >= 0 && player.y+player.h-player.dy <= b.y+25) { player.y = b.y-player.h; player.dy=0; player.ground=true; player.jumps=0; }
             else if(player.dy < 0 && player.y-player.dy >= b.y+b.h-20) { player.y = b.y+b.h; player.dy=0; spawnItem(b); }
@@ -344,12 +352,15 @@ function update() {
     });
 
     if(player.inPipe) {
-        player.x += (goal.cx - player.x - player.w/2) * 0.2; player.y += 3; if(player.w>0)player.w-=0.5;
-        if(player.y > canvas.height) { level++; initLevel(level); }
+        // Force move down to exit level
+        player.x += (goal.cx - player.x - player.w/2) * 0.2; 
+        player.y += 5; // Fast descent
+        if(player.w>0) player.w -= 0.2; // Shrink effect
+        if(player.y > canvas.height + 50) { level++; initLevel(level); }
         draw(); requestAnimationFrame(update); return;
     }
 
-    // BOSS LOGIC
+    // BOSS
     if(boss && !boss.dead) {
         if(boss.x < player.x + 800) {
             document.getElementById('boss-ui').style.display = 'block';
@@ -363,12 +374,8 @@ function update() {
             if(boss.x < camX) boss.dx = Math.abs(boss.dx);
             if(boss.x > goal.x - 100) boss.dx = -Math.abs(boss.dx);
 
-            // Special Moves based on Style
-            if(boss.style === 1) { // Ninja: Jump often
-                if(boss.timer % 60 === 0) boss.dy = -15;
-            } else { // Titan/Gold: Charge
-                if(boss.timer % 120 === 0) { boss.dy = -10; boss.dx = (player.x < boss.x) ? -boss.baseSpd*2 : boss.baseSpd*2; }
-            }
+            if(boss.style === 1) { if(boss.timer % 60 === 0) boss.dy = -15; }
+            else { if(boss.timer % 120 === 0) { boss.dy = -10; boss.dx = (player.x < boss.x) ? -boss.baseSpd*2 : boss.baseSpd*2; } }
             if(boss.iframes > 0) boss.iframes--;
 
             if(colCheck(player, boss)) {
@@ -380,20 +387,28 @@ function update() {
                         if(boss.hp <= 0) { boss.dead = true; score += 3000; playTone(50, 'noise', 0.8); }
                     }
                 } else if(player.invul <= 0) {
-                    if(player.big) { player.big=false; player.w=32; player.h=40; player.invul=60; playTone(100,'sawtooth',0.5); }
-                    else gameOver();
+                    takeDamage();
                 }
             }
         }
     } else { document.getElementById('boss-ui').style.display = 'none'; }
 
-    // ITEMS & ENEMIES
+    // ITEMS
     items.forEach((it, i) => {
         if(it.state!=='static') { it.dy+=0.5; it.x+=it.dx; it.y+=it.dy; }
         blocks.forEach(b => { if(colCheck(it, b) && it.state!=='static') { if(it.dy>0) { it.y=b.y-it.h; it.dy=0; } else it.dx*=-1; } });
         if(colCheck(player, it)) {
             items.splice(i,1); 
-            if(it.type===0) score+=100; else if(it.type===1) { player.big=true; player.w=40; player.h=56; } else { player.kart=true; player.timer=600; player.w=48; player.h=24; }
+            if(it.type===0) score+=100; 
+            else if(it.type===1) { // MUSHROOM
+                player.hp++; 
+                if(player.hp > 1) { player.w=40; player.h=56; } // Cap physical size
+                score += 1000;
+                playTone(200,'square',0.3); 
+                spawnExplosion(player.x, player.y);
+            } else { 
+                player.kart=true; player.timer=600; player.w=48; player.h=24; 
+            }
             playTone(it.type===0?800:200, 'sine', 0.1);
         }
     });
@@ -401,67 +416,73 @@ function update() {
     enemies.forEach(e => {
         if(e.dead) return;
         e.timer++;
-        if(e.type === 1) { // Bat
-             e.x += e.dx; e.y = e.anchorY + Math.sin(frames * 0.1) * 60; 
-        } else if(e.type === 2) { // Drill
-            let cycle = e.timer % 180;
-            if(cycle < 90 && e.y > e.anchorY - e.h) e.y -= 2;
-            if(cycle >= 90 && e.y < e.anchorY) e.y += 2;
-        } else if(e.type === 3) { // Frog
-            e.x += e.dx; e.dy += PHYSICS.grav; e.y += e.dy; 
-            if(e.y >= e.anchorY) { e.y = e.anchorY; e.dy = 0; e.dx=0; }
-            if(Math.random()<0.02 && e.dy===0) { e.dy=-10; e.dx = (player.x<e.x)?-2:2; }
-        } else { // Walker
-            e.x += e.dx; if(frames%60==0 && Math.random()<0.3) e.dx *= -1;
-        }
+        if(e.type === 1) { e.x += e.dx; e.y = e.anchorY + Math.sin(frames * 0.1) * 60; } 
+        else if(e.type === 2) { let cycle = e.timer % 180; if(cycle < 90 && e.y > e.anchorY - e.h) e.y -= 2; if(cycle >= 90 && e.y < e.anchorY) e.y += 2; } 
+        else if(e.type === 3) { e.x += e.dx; e.dy += PHYSICS.grav; e.y += e.dy; if(e.y >= e.anchorY) { e.y = e.anchorY; e.dy = 0; e.dx=0; } if(Math.random()<0.02 && e.dy===0) { e.dy=-10; e.dx = (player.x<e.x)?-2:2; } } 
+        else { e.x += e.dx; if(frames%60==0 && Math.random()<0.3) e.dx *= -1; }
         
         if(colCheck(player, e)) {
             if(player.kart) { e.dead=true; score+=500; spawnExplosion(e.x,e.y); }
             else if(e.type !== 2 && player.dy > 0 && player.y+player.h < e.y+e.h*0.8) { e.dead=true; player.dy=-8; score+=200; spawnExplosion(e.x,e.y); } 
-            else { if(player.big) { player.big=false; player.invul=60; } else if(player.invul<=0) gameOver(); }
+            else { if(player.invul<=0) takeDamage(); }
         }
     });
 
     if(goal && player.ground && Math.abs(player.y-(goal.y-player.h))<10 && player.x>goal.x && player.x<goal.x+goal.w) {
-         if(Math.abs(player.dx)<2) player.inPipe=true; 
+         if(Math.abs(player.dx)<2) {
+             player.inPipe=true; 
+             playTone(100, 'sawtooth', 0.5);
+         }
     }
 
     draw();
     requestAnimationFrame(update);
 }
 
+function takeDamage() {
+    if(player.hp > 1) {
+        player.hp--;
+        player.invul = 60;
+        playTone(150, 'sawtooth', 0.5);
+        if(player.hp === 1) { player.w=32; player.h=40; } // Shrink visually
+    } else {
+        gameOver();
+    }
+}
+
 function spawnExplosion(x, y) { for(let i=0;i<8;i++) particles.push({x:x,y:y,dx:(Math.random()-0.5)*10,dy:(Math.random()-0.5)*10,life:15,c:'#fff'}); }
 function colCheck(a, b) { return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
 function gameOver() { running = false; document.getElementById('menu').style.display='flex'; document.getElementById('btn-retry').style.display='block'; }
-function resetGame() { initAudio(); level=0; score=0; startGame(); }
-function retryLevel() { initAudio(); startGame(); }
-function startGame() { document.getElementById('menu').style.display='none'; player.big=false; player.kart=false; initLevel(level); running=true; update(); }
+function resetGame() { initAudio(); level=0; score=0; player.hp=1; startGame(); }
+function retryLevel() { initAudio(); player.hp=1; startGame(); }
+function startGame() { document.getElementById('menu').style.display='none'; player.kart=false; initLevel(level); running=true; update(); }
 
-// --- ADVANCED DRAWING ---
 function drawRect(x, y, w, h, c) { ctx.fillStyle=c; ctx.fillRect(x,y,w,h); }
 function drawCircle(x, y, r, c) { ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle=c; ctx.fill(); }
-function drawEye(x, y, size, lookDir) {
-    drawCircle(x, y, size, "#fff");
-    drawCircle(x + lookDir*2, y, size/2, "#000");
-}
+function drawEye(x, y, size, lookDir) { drawCircle(x, y, size, "#fff"); drawCircle(x + lookDir*2, y, size/2, "#000"); }
 
 function draw() {
     let t = BIOMES[level % BIOMES.length];
     ctx.fillStyle = t.bg; ctx.fillRect(0,0,canvas.width,canvas.height);
     document.getElementById('world-ui').innerText = "WORLD 1-" + (level+1);
+    
+    // HP Display
+    let hpText = "HP: " + player.hp;
+    if(player.hp > 2) hpText += " (MAX)";
+    document.getElementById('hp-ui').innerText = hpText;
+    document.getElementById('hp-ui').style.color = (player.hp>1) ? "#00E676" : "#FF5252";
 
-    // Blocks with Top Layer
     blocks.forEach(b => {
         if(b.x > camX+canvas.width || b.x+b.w < camX) return;
         let bx = b.x-camX;
         ctx.fillStyle = b.c; ctx.fillRect(bx, b.y, b.w, b.h);
-        if(b.type === 'ground') { ctx.fillStyle = t.top; ctx.fillRect(bx, b.y, b.w, 15); } // Grass top
+        if(b.type === 'ground') { ctx.fillStyle = t.top; ctx.fillRect(bx, b.y, b.w, 15); }
         if(b.type === 'brick') { 
-            ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.fillRect(bx+5, b.y+5, b.w-10, b.h-10); // Bevel
+            ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.fillRect(bx+5, b.y+5, b.w-10, b.h-10);
             if(b.content) { ctx.fillStyle="#FFD700"; ctx.fillText("?", bx+20, b.y+40); }
         }
         if(b.type === 'pipe') {
-             ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.fillRect(bx+5, b.y, 10, b.h); // Highlight
+             ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.fillRect(bx+5, b.y, 10, b.h);
              ctx.fillStyle = "#000"; ctx.strokeRect(bx, b.y, b.w, b.h);
         }
     });
@@ -470,128 +491,107 @@ function draw() {
         if(it.x > camX+canvas.width) return;
         let ix = it.x-camX;
         if(it.type===0) { 
-            // 3D Coin
             let rot = Math.abs(Math.sin(frames*0.1));
             ctx.fillStyle="#FFD700"; ctx.beginPath(); ctx.ellipse(ix+15,it.y+15, 12*rot, 12, 0, 0, 6.28); ctx.fill();
             ctx.fillStyle="#FFF"; ctx.fillText("$", ix+10, it.y+22);
         }
-        else if(it.type===1) { // Mushroom
-             drawCircle(ix+15, it.y+10, 15, "#D32F2F"); // Cap
-             drawCircle(ix+8, it.y+8, 4, "#fff"); drawCircle(ix+22, it.y+8, 4, "#fff"); // Dots
-             drawRect(ix+8, it.y+15, 14, 15, "#FFE0B2"); // Stem
+        else if(it.type===1) { // REAL MUSHROOM VISUALS
+             // Stem
+             ctx.fillStyle = "#FFE0B2"; ctx.fillRect(ix+10, it.y+15, 10, 15);
+             // Cap (Red)
+             ctx.fillStyle = "#D50000"; 
+             ctx.beginPath(); ctx.arc(ix+15, it.y+15, 15, Math.PI, 0); ctx.fill();
+             // Spots (White)
+             ctx.fillStyle = "#fff"; 
+             ctx.beginPath(); ctx.arc(ix+10, it.y+10, 3, 0, Math.PI*2); ctx.fill();
+             ctx.beginPath(); ctx.arc(ix+20, it.y+8, 4, 0, Math.PI*2); ctx.fill();
+             ctx.beginPath(); ctx.arc(ix+5, it.y+15, 2, 0, Math.PI*2); ctx.fill();
         }
         else { ctx.fillStyle="#2979FF"; ctx.fillRect(ix,it.y,it.w,it.h); ctx.fillStyle="#FFF"; ctx.fillText("K", ix+10, it.y+20); }
     });
 
     if(goal) { ctx.fillStyle=t.pipe; ctx.fillRect(goal.x-camX-5, goal.y, goal.w+10, 30); ctx.fillStyle="#fff"; ctx.fillText("GOAL", goal.x-camX+15, goal.y+60); }
 
-    // BOSS DRAWING
     if(boss && !boss.dead) {
         let bx = boss.x - camX;
         let shake = (boss.iframes>0)?(Math.random()*4-2):0;
-        
-        ctx.save();
-        ctx.translate(bx + boss.w/2 + shake, boss.y + boss.h/2);
-        
-        if(boss.style === 0) { // TITAN (Red Square with Spikes)
+        ctx.save(); ctx.translate(bx + boss.w/2 + shake, boss.y + boss.h/2);
+        if(boss.style === 0) {
             ctx.fillStyle = boss.color; ctx.fillRect(-boss.w/2, -boss.h/2, boss.w, boss.h);
             drawEye(-15, -10, 8, -1); drawEye(15, -10, 8, -1);
-            // Spikes
-            ctx.fillStyle = "#fff";
-            ctx.beginPath(); ctx.moveTo(-boss.w/2, -boss.h/2); ctx.lineTo(-boss.w/2-10, -boss.h/2+20); ctx.lineTo(-boss.w/2, -boss.h/2+40); ctx.fill();
+            ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.moveTo(-boss.w/2, -boss.h/2); ctx.lineTo(-boss.w/2-10, -boss.h/2+20); ctx.lineTo(-boss.w/2, -boss.h/2+40); ctx.fill();
         } 
-        else if (boss.style === 1) { // NINJA (Purple Circle)
+        else if (boss.style === 1) {
             drawCircle(0, 0, boss.w/2, boss.color);
-            // Bandana
             ctx.fillStyle = "#000"; ctx.fillRect(-boss.w/2, -10, boss.w, 15);
-            ctx.fillStyle = "#fff"; ctx.fillRect(-15, -8, 10, 4); ctx.fillRect(5, -8, 10, 4); // Angry Eyes
+            ctx.fillStyle = "#fff"; ctx.fillRect(-15, -8, 10, 4); ctx.fillRect(5, -8, 10, 4);
         } 
-        else { // GOLD KING (Big Crown)
+        else {
             ctx.fillStyle = boss.color; ctx.fillRect(-boss.w/2, -boss.h/2, boss.w, boss.h);
-            ctx.fillStyle = "#FFA000"; ctx.fillRect(-boss.w/2+10, -boss.h/2+10, boss.w-20, boss.h-20); // Inner detail
+            ctx.fillStyle = "#FFA000"; ctx.fillRect(-boss.w/2+10, -boss.h/2+10, boss.w-20, boss.h-20);
             drawEye(-30, 0, 12, -1); drawEye(30, 0, 12, -1);
-            // Crown
-            ctx.fillStyle = "#FFFF00"; 
-            ctx.beginPath(); ctx.moveTo(-40,-boss.h/2); ctx.lineTo(-20,-boss.h/2-30); ctx.lineTo(0,-boss.h/2); ctx.lineTo(20,-boss.h/2-30); ctx.lineTo(40,-boss.h/2); ctx.fill();
+            ctx.fillStyle = "#FFFF00"; ctx.beginPath(); ctx.moveTo(-40,-boss.h/2); ctx.lineTo(-20,-boss.h/2-30); ctx.lineTo(0,-boss.h/2); ctx.lineTo(20,-boss.h/2-30); ctx.lineTo(40,-boss.h/2); ctx.fill();
         }
         ctx.restore();
     }
 
-    // ENEMIES
     enemies.forEach(e => {
         if(e.dead || e.x > camX+canvas.width) return;
         let ex = e.x - camX;
-        
-        if(e.type === 1) { // Bat
-            ctx.fillStyle = "#5E35B1"; drawCircle(ex+20, e.y+15, 12, "#5E35B1"); // Body
+        if(e.type === 1) {
+            ctx.fillStyle = "#5E35B1"; drawCircle(ex+20, e.y+15, 12, "#5E35B1");
             drawEye(ex+16, e.y+12, 3, 0); drawEye(ex+24, e.y+12, 3, 0);
-            // Wings
             let wingY = Math.sin(frames*0.5)*10;
-            ctx.fillStyle = "#4527A0"; 
-            ctx.beginPath(); ctx.moveTo(ex+10, e.y+15); ctx.lineTo(ex-10, e.y+5+wingY); ctx.lineTo(ex+10, e.y+25); ctx.fill();
-            ctx.beginPath(); ctx.moveTo(ex+30, e.y+15); ctx.lineTo(ex+50, e.y+5+wingY); ctx.lineTo(ex+30, e.y+25); ctx.fill();
+            ctx.fillStyle = "#4527A0"; ctx.beginPath(); ctx.moveTo(ex+10, e.y+15); ctx.lineTo(ex-10, e.y+5+wingY); ctx.lineTo(ex+10, e.y+25); ctx.fill(); ctx.beginPath(); ctx.moveTo(ex+30, e.y+15); ctx.lineTo(ex+50, e.y+5+wingY); ctx.lineTo(ex+30, e.y+25); ctx.fill();
         }
-        else if(e.type === 2) { // DRILL BOT (Replaces Cactus)
-            ctx.save();
-            ctx.translate(ex+20, e.y+30);
+        else if(e.type === 2) {
+            ctx.save(); ctx.translate(ex+20, e.y+30);
             let spin = Math.sin(frames*0.5)*5;
-            ctx.fillStyle = "#B0BEC5"; // Silver
-            ctx.beginPath(); ctx.moveTo(-15, 30); ctx.lineTo(0, -30); ctx.lineTo(15, 30); ctx.fill(); // Drill cone
-            // Spiral lines
-            ctx.strokeStyle = "#546E7A"; ctx.lineWidth=2;
-            ctx.beginPath(); ctx.moveTo(-10, 20+spin); ctx.lineTo(5, -10+spin); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(-5, 30+spin); ctx.lineTo(10, 0+spin); ctx.stroke();
+            ctx.fillStyle = "#B0BEC5"; ctx.beginPath(); ctx.moveTo(-15, 30); ctx.lineTo(0, -30); ctx.lineTo(15, 30); ctx.fill();
+            ctx.strokeStyle = "#546E7A"; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(-10, 20+spin); ctx.lineTo(5, -10+spin); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-5, 30+spin); ctx.lineTo(10, 0+spin); ctx.stroke();
             ctx.restore();
         }
-        else if(e.type === 3) { // Frog
-            ctx.fillStyle = "#43A047"; // Green
-            drawCircle(ex+18, e.y+20, 14, "#43A047"); // Body
-            drawEye(ex+12, e.y+10, 4, 0); drawEye(ex+24, e.y+10, 4, 0); // Eyes pop out
-            // Legs
-            ctx.strokeStyle = "#2E7D32"; ctx.lineWidth=4;
-            ctx.beginPath(); ctx.moveTo(ex+5, e.y+25); ctx.lineTo(ex-5, e.y+32); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(ex+31, e.y+25); ctx.lineTo(ex+41, e.y+32); ctx.stroke();
+        else if(e.type === 3) {
+            ctx.fillStyle = "#43A047"; drawCircle(ex+18, e.y+20, 14, "#43A047");
+            drawEye(ex+12, e.y+10, 4, 0); drawEye(ex+24, e.y+10, 4, 0);
+            ctx.strokeStyle = "#2E7D32"; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(ex+5, e.y+25); ctx.lineTo(ex-5, e.y+32); ctx.stroke(); ctx.beginPath(); ctx.moveTo(ex+31, e.y+25); ctx.lineTo(ex+41, e.y+32); ctx.stroke();
         }
-        else { // Walker (Mushroom/Goom)
-            ctx.fillStyle = "#D84315"; // Burnt Orange
-            ctx.beginPath(); ctx.arc(ex+18, e.y+18, 16, Math.PI, 0); ctx.lineTo(ex+34, e.y+34); ctx.lineTo(ex+2, e.y+34); ctx.fill(); // Shape
+        else {
+            ctx.fillStyle = "#D84315"; ctx.beginPath(); ctx.arc(ex+18, e.y+18, 16, Math.PI, 0); ctx.lineTo(ex+34, e.y+34); ctx.lineTo(ex+2, e.y+34); ctx.fill();
             drawEye(ex+12, e.y+15, 4, e.dx>0?1:-1); drawEye(ex+24, e.y+15, 4, e.dx>0?1:-1);
-            // Feet animation
-            let walk = Math.sin(frames*0.2)*5;
-            ctx.fillStyle = "#000"; 
-            ctx.fillRect(ex+8+walk, e.y+32, 8, 6); ctx.fillRect(ex+20-walk, e.y+32, 8, 6);
+            let walk = Math.sin(frames*0.2)*5; ctx.fillStyle = "#000"; ctx.fillRect(ex+8+walk, e.y+32, 8, 6); ctx.fillRect(ex+20-walk, e.y+32, 8, 6);
         }
     });
     
-    // Particles
     particles.forEach((p, i) => {
         p.x += p.dx; p.y += p.dy; p.life--;
         ctx.fillStyle = p.c; ctx.fillRect(p.x-camX, p.y, 5, 5);
         if(p.life<=0) particles.splice(i, 1);
     });
 
-    // Player
     if(!player.dead && player.invul % 4 < 2) {
         let px = player.x-camX; let py = player.y;
         if(player.kart) {
-             ctx.fillStyle="#FF1744"; ctx.fillRect(px,py+15,player.w,15); // Car Body
-             drawCircle(px+10, py+30, 6, "#000"); drawCircle(px+player.w-10, py+30, 6, "#000"); // Wheels
-             ctx.fillStyle="#FFEB3B"; ctx.fillRect(px+player.w-5, py+18, 5, 5); // Headlight
+             ctx.fillStyle="#FF1744"; ctx.fillRect(px,py+15,player.w,15);
+             drawCircle(px+10, py+30, 6, "#000"); drawCircle(px+player.w-10, py+30, 6, "#000");
+             ctx.fillStyle="#FFEB3B"; ctx.fillRect(px+player.w-5, py+18, 5, 5);
         } else {
-             // 3D Player
              let dir = player.facing;
-             ctx.fillStyle = "#b71c1c"; // Red Cap
-             ctx.fillRect(px, py, player.w, 10); ctx.fillRect(dir>0?px+5:px-5, py+8, player.w, 4); // Brim
-             ctx.fillStyle = "#FFCCBC"; // Face
+             // Color logic: HP>2 = Gold/Power
+             let hatC = player.hp>2 ? "#FFD700" : "#b71c1c";
+             let suitC = player.hp>2 ? "#FFF" : "#0D47A1";
+             
+             ctx.fillStyle = hatC;
+             ctx.fillRect(px, py, player.w, 10); ctx.fillRect(dir>0?px+5:px-5, py+8, player.w, 4);
+             ctx.fillStyle = "#FFCCBC";
              ctx.fillRect(px+5, py+10, player.w-10, 10);
-             drawEye(dir>0?px+22:px+10, py+15, 3, dir); // Eye
-             ctx.fillStyle = "#0D47A1"; // Blue Overalls
+             drawEye(dir>0?px+22:px+10, py+15, 3, dir);
+             ctx.fillStyle = suitC;
              ctx.fillRect(px+5, py+20, player.w-10, 15);
-             // Arms/Legs
-             ctx.fillStyle = "#b71c1c"; 
+             ctx.fillStyle = hatC; 
              let run = (Math.abs(player.dx)>0.1) ? Math.sin(frames*0.5)*5 : 0;
-             ctx.fillRect(px+(dir>0?0:20)+run, py+22, 8, 8); // Arm
-             ctx.fillStyle = "#000"; // Shoes
+             ctx.fillRect(px+(dir>0?0:20)+run, py+22, 8, 8);
+             ctx.fillStyle = "#000";
              ctx.fillRect(px+5-run, py+35, 10, 5); ctx.fillRect(px+18+run, py+35, 10, 5);
         }
     }
