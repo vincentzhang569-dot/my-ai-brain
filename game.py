@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V44 Evolution",
+    page_title="Super AI Kart: V45 Showdown",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -35,11 +35,11 @@ game_html = """
     
     #boss-ui { 
         position: absolute; top: 80px; left: 50%; transform: translateX(-50%); 
-        width: 300px; padding: 5px; background: rgba(0,0,0,0.5); border-radius: 15px; display: none; 
+        width: 300px; padding: 5px; background: rgba(0,0,0,0.6); border-radius: 15px; display: none; border: 2px solid #fff;
     }
-    #boss-name { color: #fff; text-align: center; font-size: 14px; margin-bottom: 4px; text-transform: uppercase; text-shadow: 1px 1px 0 #000; }
-    #boss-bar-bg { width: 100%; height: 12px; background: #555; border-radius: 6px; overflow: hidden; }
-    #boss-hp { width: 100%; height: 100%; background: linear-gradient(90deg, #ff4444, #cc0000); transition: width 0.1s; }
+    #boss-name { color: #fff; text-align: center; font-size: 16px; margin-bottom: 4px; text-transform: uppercase; text-shadow: 1px 1px 0 #000; font-weight: 900; }
+    #boss-bar-bg { width: 100%; height: 16px; background: #333; border-radius: 8px; overflow: hidden; border: 1px solid #777; }
+    #boss-hp { width: 100%; height: 100%; background: linear-gradient(90deg, #FF9800, #D50000); transition: width 0.2s; }
 
     #controls { display: none; position: absolute; bottom: 0; width: 100%; height: 100%; pointer-events: none; }
     .btn {
@@ -56,7 +56,7 @@ game_html = """
 
     #menu {
         position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-        background: linear-gradient(135deg, rgba(20,0,20,0.95), rgba(0,0,40,0.95)); z-index: 100;
+        background: linear-gradient(135deg, rgba(20,0,20,0.95), rgba(60,0,0,0.95)); z-index: 100;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
     .btn-container { display: flex; gap: 20px; margin-top: 30px; }
@@ -96,7 +96,7 @@ game_html = """
 
     <div id="menu">
         <h1 id="menu-title">SUPER AI KART</h1>
-        <p id="menu-sub">V44: Evolution & Fortune</p>
+        <p id="menu-sub">V45: Showdown Update</p>
         <div class="btn-container">
             <button id="btn-retry" class="start-btn" onclick="retryLevel()" style="display:none; background: #4CAF50;">RETRY</button>
             <button id="btn-start" class="start-btn" onclick="resetGame()">PLAY</button>
@@ -121,6 +121,7 @@ let coinCount = 0;
 let level = 0;
 let audioCtx = null;
 let bgmTimer = null;
+let shake = 0;
 
 let player = { 
     x:100, y:0, w:32, h:40, dx:0, dy:0, 
@@ -135,6 +136,7 @@ let blocks = [];
 let enemies = [];
 let particles = [];
 let items = []; 
+let projectiles = []; // Boss projectiles
 let goal = null;
 let boss = null; 
 let floatText = []; 
@@ -195,11 +197,9 @@ function playBGM() {
     }
 }
 
-// --- Helper for Coins ---
 function addCoin(x, y, amount=1) {
     coinCount += amount;
     score += 100 * amount;
-    // Check 50 coins reward
     if(coinCount >= 50) {
         coinCount -= 50;
         player.hp++;
@@ -207,18 +207,16 @@ function addCoin(x, y, amount=1) {
         playTone(600, 'square', 0.3); playTone(800, 'square', 0.3);
         floatText.push({x:player.x, y:player.y-20, t:"+1 HP", life:60});
     }
-    // Sound & Visual
     playTone(800 + (Math.random()*200), 'square', 0.1);
     floatText.push({x:x, y:y-20, t:"+1 🪙", life:30});
 }
 
 // --- Init & Gen ---
 function initLevel(lvl) {
-    blocks = []; enemies = []; particles = []; items = []; boss = null; floatText = [];
+    blocks = []; enemies = []; particles = []; items = []; projectiles = []; boss = null; floatText = [];
     let t = BIOMES[lvl % BIOMES.length];
     
     player.x = 100; player.y = 0; player.dx=0; player.dy=0;
-    // Keep size if HP is high from previous level
     player.w = player.hp > 1 ? 40 : 32; 
     player.h = player.hp > 1 ? 56 : 40; 
     player.inPipe = false; player.dead = false; player.invul = 0;
@@ -235,7 +233,6 @@ function initLevel(lvl) {
         let rng = Math.random();
         if(Math.random() < 0.25) {
             let cy = groundY - 120 - Math.random()*80;
-            // Loose coins in air
             for(let k=0; k<4; k++) items.push({ x: x + k*35, y: cy + Math.sin(k)*20, w:30, h:30, type:0, dy:0, dx:0, state:'static' });
         }
 
@@ -278,16 +275,16 @@ function initLevel(lvl) {
     
     let bossStyle = lvl % 3;
     let bossProps = {
-        0: { name: "IRON TITAN", color: "#D32F2F", w:90, h:90, hp:3, spd:2 },
-        1: { name: "SHADOW NINJA", color: "#7B1FA2", w:60, h:60, hp:3, spd:6 },
-        2: { name: "GOLD KING", color: "#FFD700", w:120, h:120, hp:5, spd:1.5 }
+        0: { name: "IRON TITAN", color: "#B71C1C", w:100, h:100, hp:5, spd:2 },
+        1: { name: "SHADOW NINJA", color: "#4A148C", w:70, h:70, hp:4, spd:5 },
+        2: { name: "GOLD KING", color: "#FFD700", w:110, h:110, hp:6, spd:2 }
     }[bossStyle];
 
     boss = {
         x: x + 600, y: groundY - bossProps.h, w: bossProps.w, h: bossProps.h, 
-        dx: -bossProps.spd, dy: 0, hp: bossProps.hp, maxHp: bossProps.hp,
+        dx: 0, dy: 0, hp: bossProps.hp, maxHp: bossProps.hp,
         iframes: 0, dead: false, style: bossStyle, name: bossProps.name,
-        baseSpd: bossProps.spd, timer: 0
+        baseSpd: bossProps.spd, timer: 0, action: 'chase'
     };
     
     x += 1000;
@@ -318,18 +315,13 @@ function spawnEnemy(x, y, type) {
 
 function spawnItem(block) {
     if(!block.content) return;
-    
-    // FEATURE: Instant Coin Collection
     if(block.content === "coin") {
-        addCoin(block.x + 30, block.y); // Instant collect
+        addCoin(block.x + 30, block.y); 
         block.content=null; block.hit=true;
         return; 
     }
-
-    // Only Mushrooms/Karts fall
     let type = (block.content==="mushroom"?1:2);
-    let idX = 2; // Always right
-
+    let idX = 2; 
     items.push({ x: block.x+15, y: block.y, w:30, h:30, type:type, dy:-6, dx:idX, state:'spawning' });
     playTone(500, 'square', 0.1);
     block.content=null; block.hit=true;
@@ -338,8 +330,10 @@ function spawnItem(block) {
 function update() {
     if(!running) return;
     frames++;
+    if(shake>0) shake--;
     if(player.invul > 0) player.invul--;
 
+    // Player Physics
     if(player.kart) {
         player.timer--;
         if(player.timer <= 0) { player.kart = false; player.w = player.hp>1?40:32; playTone(150,'sawtooth',0.5); }
@@ -357,11 +351,8 @@ function update() {
         if(player.ground || (player.jumps > 0 && player.jumps < (player.kart?999:3))) { 
             player.dy = (player.ground ? PHYSICS.jump : PHYSICS.jump*0.9); 
             player.jumps++; input.jLock=true; playTone(330,'square',0.1); 
-            
             if(player.jumps === 3) {
-                 for(let k=0; k<12; k++) {
-                     particles.push({x: player.x + player.w/2, y: player.y + player.h, dx: (Math.random()-0.5) * 12, dy: (Math.random() * 8) + 2, life: 20, c: '#00E676'});
-                 }
+                 for(let k=0; k<12; k++) particles.push({x: player.x + player.w/2, y: player.y + player.h, dx: (Math.random()-0.5) * 12, dy: (Math.random() * 8) + 2, life: 20, c: '#00E676'});
                  playTone(600, 'square', 0.15); 
             }
         }
@@ -385,43 +376,112 @@ function update() {
         }
     });
 
+    // --- KART PIPE FIX & LEVEL END ---
     if(player.inPipe) {
         player.x += (goal.cx - player.x - player.w/2) * 0.2; 
         player.y += 5; 
-        if(player.w>0) player.w -= 0.2;
+        if(player.w>0) player.w -= 0.5;
         if(player.y > canvas.height + 50) { level++; initLevel(level); }
         draw(); requestAnimationFrame(update); return;
     }
 
+    if(goal && player.ground) {
+        // Relaxed hitbox for Kart: if near center of pipe
+        let dist = Math.abs(player.x + player.w/2 - goal.cx);
+        // If on top of pipe (y check) and close to center (x check)
+        if(Math.abs(player.y - (goal.y - player.h)) < 15 && dist < 30) {
+             // AUTO-DISMOUNT KART for pipe entry
+             if(player.kart) {
+                 player.kart = false;
+                 // Restore dims immediately so visual shrink looks right
+                 player.w = player.hp > 1 ? 40 : 32;
+                 player.h = player.hp > 1 ? 56 : 40;
+                 player.y = goal.y - player.h; // Snap to top
+             }
+             
+             // Slow down player to help them enter
+             if(Math.abs(player.dx) < 6) {
+                 player.dx *= 0.5; // Auto-brake
+                 if (Math.abs(player.dx) < 1) {
+                     player.inPipe=true; 
+                     playTone(100, 'sawtooth', 0.5);
+                 }
+             }
+        }
+    }
+    // ---------------------------------
+
+    // --- BOSS AI UPDATE ---
     if(boss && !boss.dead) {
         if(boss.x < player.x + 800) {
             document.getElementById('boss-ui').style.display = 'block';
             document.getElementById('boss-name').innerText = boss.name;
             document.getElementById('boss-hp').style.width = (boss.hp / boss.maxHp * 100) + '%';
-            document.getElementById('boss-hp').style.background = boss.style===1 ? "#7B1FA2" : (boss.style===2 ? "#FFD700" : "#ff4444");
-
+            
             boss.timer++;
-            boss.x += boss.dx; boss.dy += PHYSICS.grav; boss.y += boss.dy;
-            if(boss.y > canvas.height - 180 - boss.h) { boss.y = canvas.height - 180 - boss.h; boss.dy = 0; }
-            if(boss.x < camX) boss.dx = Math.abs(boss.dx);
-            if(boss.x > goal.x - 100) boss.dx = -Math.abs(boss.dx);
+            
+            // Phase Logic
+            let dist = player.x - boss.x;
+            
+            if(boss.action === 'chase') {
+                // Smart chase with acceleration
+                if(dist > 0) boss.dx += 0.2; else boss.dx -= 0.2;
+                if(boss.dx > boss.baseSpd) boss.dx = boss.baseSpd;
+                if(boss.dx < -boss.baseSpd) boss.dx = -boss.baseSpd;
+                
+                // Randomly choose attack
+                if(boss.timer > 120 && Math.random() < 0.05) {
+                    boss.action = (Math.random() < 0.5) ? 'jump_attack' : 'shoot';
+                    boss.timer = 0;
+                }
+            } 
+            else if(boss.action === 'shoot') {
+                boss.dx *= 0.9;
+                if(boss.timer === 30) {
+                    // Shoot projectile
+                    let pdx = (player.x > boss.x) ? 6 : -6;
+                    let ptype = boss.style; // 0=fire, 1=shuriken, 2=coin
+                    projectiles.push({x: boss.x+boss.w/2, y: boss.y+boss.h/2, w:20, h:20, dx:pdx, dy: (player.y - boss.y)*0.02, type: ptype, life:100});
+                    playTone(600, 'sawtooth', 0.2);
+                }
+                if(boss.timer > 60) { boss.action='chase'; boss.timer=0; }
+            }
+            else if(boss.action === 'jump_attack') {
+                if(boss.timer === 1) { boss.dy = -18; boss.dx = (dist>0?4:-4); playTone(150, 'square', 0.3); } // Big Jump
+                if(boss.timer > 10 && boss.y >= canvas.height - 180 - boss.h && boss.dy > 0) {
+                    // Slam Land
+                    boss.dy = 0; boss.y = canvas.height - 180 - boss.h;
+                    shake = 10; // Screen Shake
+                    spawnExplosion(boss.x, boss.y+boss.h);
+                    spawnExplosion(boss.x+boss.w, boss.y+boss.h);
+                    playTone(100, 'noise', 0.5);
+                    boss.action = 'recover'; boss.timer=0;
+                }
+            }
+            else if(boss.action === 'recover') {
+                boss.dx = 0;
+                if(boss.timer > 60) { boss.action='chase'; boss.timer=0; }
+            }
 
-            if(boss.style === 1) { if(boss.timer % 60 === 0) boss.dy = -15; }
-            else { if(boss.timer % 120 === 0) { boss.dy = -10; boss.dx = (player.x < boss.x) ? -boss.baseSpd*2 : boss.baseSpd*2; } }
+            boss.dy += PHYSICS.grav; boss.y += boss.dy;
+            boss.x += boss.dx;
+            if(boss.y > canvas.height - 180 - boss.h) { boss.y = canvas.height - 180 - boss.h; boss.dy = 0; }
+            if(boss.x < camX) boss.x = camX;
+            if(boss.x > goal.x - 100) boss.x = goal.x - 100;
+            
             if(boss.iframes > 0) boss.iframes--;
 
             if(colCheck(player, boss)) {
-                if(player.kart) { boss.hp = 0; }
+                if(player.kart) { boss.hp -= 2; boss.iframes=30; spawnExplosion(boss.x+boss.w/2,boss.y); playTone(100,'noise',0.5); }
                 else if(player.dy > 0 && player.y + player.h < boss.y + boss.h * 0.6) {
                     if(boss.iframes <= 0) {
-                        boss.hp--; boss.iframes = 10; player.dy = -10; spawnExplosion(boss.x+boss.w/2, boss.y);
+                        boss.hp--; boss.iframes = 30; player.dy = -10; spawnExplosion(boss.x+boss.w/2, boss.y);
                         playTone(150, 'square', 0.3);
                     }
                 } else if(player.invul <= 0) { takeDamage(); }
 
                 if(boss.hp <= 0) { 
                     boss.dead = true; score += 5000; playTone(50, 'noise', 0.8);
-                    // BOSS LOOT
                     for(let i=0; i<30; i++) {
                         items.push({
                              x: boss.x + boss.w/2, y: boss.y + boss.h/2,
@@ -433,46 +493,37 @@ function update() {
             }
         }
     } else { document.getElementById('boss-ui').style.display = 'none'; }
+    
+    // Projectiles Logic
+    projectiles.forEach((p, i) => {
+        p.x += p.dx; p.y += p.dy; p.life--;
+        if(colCheck(player, p)) {
+            if(player.invul<=0) takeDamage();
+            p.life = 0;
+        }
+        if(p.life <= 0) projectiles.splice(i, 1);
+    });
 
-    // ITEMS
     items.forEach((it, i) => {
         if(it.state!=='static') { 
             it.dy+=0.5; it.x+=it.dx; it.y+=it.dy;
             if(it.type === 0) { it.dx *= 0.95; }
             if(it.y > canvas.height) items.splice(i,1); 
         }
-        
         blocks.forEach(b => { 
             if(colCheck(it, b) && it.state!=='static') { 
                 if (it.dy < 0) return;
                 if(it.dy>0 && it.y+it.h-it.dy <= b.y+15) { 
-                    it.y=b.y-it.h; 
-                    it.dy= -it.dy * 0.5; 
-                    if(Math.abs(it.dy) < 1) it.dy=0;
+                    it.y=b.y-it.h; it.dy= -it.dy * 0.5; if(Math.abs(it.dy) < 1) it.dy=0;
                 } else { it.dx*=-1; } 
             } 
         });
-
-        if(it.y > canvas.height - 110) { 
-            it.y = canvas.height - 110;
-            it.dy = -it.dy * 0.5;
-            if(Math.abs(it.dy) < 1) it.dy=0;
-        }
-
+        if(it.y > canvas.height - 110) { it.y = canvas.height - 110; it.dy = -it.dy * 0.5; if(Math.abs(it.dy) < 1) it.dy=0; }
         if(colCheck(player, it)) {
             items.splice(i,1); 
-            if(it.type===0) { 
-                addCoin(it.x, it.y); // Helper function
-            } 
-            else if(it.type===1) { 
-                player.hp++; 
-                if(player.hp > 1) { player.w=40; player.h=56; }
-                score += 1000;
-                playTone(200,'square',0.3); 
-                spawnExplosion(player.x, player.y);
-            } else { 
-                player.kart=true; player.timer=600; player.w=48; player.h=24; 
-            }
+            if(it.type===0) { addCoin(it.x, it.y); } 
+            else if(it.type===1) { player.hp++; if(player.hp > 1) { player.w=40; player.h=56; } score += 1000; playTone(200,'square',0.3); spawnExplosion(player.x, player.y); } 
+            else { player.kart=true; player.timer=600; player.w=48; player.h=24; }
         }
     });
 
@@ -485,21 +536,11 @@ function update() {
         else { e.x += e.dx; if(frames%60==0 && Math.random()<0.3) e.dx *= -1; }
         
         if(colCheck(player, e)) {
-            if(player.kart) { 
-                e.dead=true; score+=500; spawnExplosion(e.x,e.y); 
-                addCoin(e.x, e.y); // Kart Kill Reward
-            }
-            else if(e.type !== 2 && player.dy > 0 && player.y+player.h < e.y+e.h*0.8) { 
-                e.dead=true; player.dy=-8; score+=200; spawnExplosion(e.x,e.y); 
-                addCoin(e.x, e.y); // Stomp Kill Reward
-            } 
+            if(player.kart) { e.dead=true; score+=500; spawnExplosion(e.x,e.y); addCoin(e.x, e.y); }
+            else if(e.type !== 2 && player.dy > 0 && player.y+player.h < e.y+e.h*0.8) { e.dead=true; player.dy=-8; score+=200; spawnExplosion(e.x,e.y); addCoin(e.x, e.y); } 
             else { if(player.invul<=0) takeDamage(); }
         }
     });
-
-    if(goal && player.ground && Math.abs(player.y-(goal.y-player.h))<10 && player.x>goal.x && player.x<goal.x+goal.w) {
-         if(Math.abs(player.dx)<2) { player.inPipe=true; playTone(100, 'sawtooth', 0.5); }
-    }
 
     draw();
     requestAnimationFrame(update);
@@ -507,13 +548,9 @@ function update() {
 
 function takeDamage() {
     if(player.hp > 1) {
-        player.hp--;
-        player.invul = 60;
-        playTone(150, 'sawtooth', 0.5);
+        player.hp--; player.invul = 60; playTone(150, 'sawtooth', 0.5);
         if(player.hp === 1) { player.w=32; player.h=40; } 
-    } else {
-        gameOver();
-    }
+    } else { gameOver(); }
 }
 
 function spawnExplosion(x, y) { for(let i=0;i<8;i++) particles.push({x:x,y:y,dx:(Math.random()-0.5)*10,dy:(Math.random()-0.5)*10,life:15,c:'#fff'}); }
@@ -529,12 +566,19 @@ function drawEye(x, y, size, lookDir) { drawCircle(x, y, size, "#fff"); drawCirc
 
 function draw() {
     let t = BIOMES[level % BIOMES.length];
+    
+    // Screen Shake
+    let sx = (shake>0) ? (Math.random()*shake - shake/2) : 0;
+    let sy = (shake>0) ? (Math.random()*shake - shake/2) : 0;
+    
+    ctx.save();
+    ctx.translate(sx, sy);
+    
     ctx.fillStyle = t.bg; ctx.fillRect(0,0,canvas.width,canvas.height);
     document.getElementById('world-ui').innerText = "WORLD 1-" + (level+1);
     
     let hpText = "HP: " + player.hp;
-    if(player.hp >= 3) hpText += " (ELITE)";
-    else if(player.hp == 2) hpText += " (BIG)";
+    if(player.hp >= 3) hpText += " (ELITE)"; else if(player.hp == 2) hpText += " (BIG)";
     document.getElementById('hp-ui').innerText = hpText;
     document.getElementById('hp-ui').style.color = (player.hp>1) ? "#00E676" : "#FF5252";
     document.getElementById('coin-ui').innerText = "🪙 " + coinCount + " / 50";
@@ -546,59 +590,67 @@ function draw() {
         if(b.type === 'ground') { ctx.fillStyle = t.top; ctx.fillRect(bx, b.y, b.w, 15); }
         if(b.type === 'brick') { 
             ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.fillRect(bx+5, b.y+5, b.w-10, b.h-10);
-            if(b.content) { 
-                ctx.fillStyle="#FFD700"; 
-                ctx.font = "900 32px 'Arial Black', sans-serif";
-                ctx.textAlign = "center";
-                ctx.fillText("?", bx+30, b.y+42);
-                ctx.textAlign = "start"; 
-            }
+            if(b.content) { ctx.fillStyle="#FFD700"; ctx.font = "900 32px 'Arial Black', sans-serif"; ctx.textAlign = "center"; ctx.fillText("?", bx+30, b.y+42); ctx.textAlign = "start"; }
         }
-        if(b.type === 'pipe') {
-             ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.fillRect(bx+5, b.y, 10, b.h);
-             ctx.fillStyle = "#000"; ctx.strokeRect(bx, b.y, b.w, b.h);
-        }
+        if(b.type === 'pipe') { ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.fillRect(bx+5, b.y, 10, b.h); ctx.fillStyle = "#000"; ctx.strokeRect(bx, b.y, b.w, b.h); }
     });
 
     items.forEach(it => {
         if(it.x > camX+canvas.width) return;
         let ix = it.x-camX;
-        if(it.type===0) { 
-            let rot = Math.abs(Math.sin(frames*0.1));
-            ctx.fillStyle="#FFD700"; ctx.beginPath(); ctx.ellipse(ix+15,it.y+15, 12*rot, 12, 0, 0, 6.28); ctx.fill();
-            ctx.fillStyle="#FFF"; ctx.fillText("$", ix+10, it.y+22);
-        }
-        else if(it.type===1) { 
-             ctx.fillStyle = "#FFE0B2"; ctx.fillRect(ix+10, it.y+15, 10, 15);
-             ctx.fillStyle = "#D50000"; ctx.beginPath(); ctx.arc(ix+15, it.y+15, 15, Math.PI, 0); ctx.fill();
-             ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(ix+10, it.y+10, 3, 0, Math.PI*2); ctx.fill();
-             ctx.beginPath(); ctx.arc(ix+20, it.y+8, 4, 0, Math.PI*2); ctx.fill();
-             ctx.beginPath(); ctx.arc(ix+5, it.y+15, 2, 0, Math.PI*2); ctx.fill();
-        }
+        if(it.type===0) { let rot = Math.abs(Math.sin(frames*0.1)); ctx.fillStyle="#FFD700"; ctx.beginPath(); ctx.ellipse(ix+15,it.y+15, 12*rot, 12, 0, 0, 6.28); ctx.fill(); ctx.fillStyle="#FFF"; ctx.fillText("$", ix+10, it.y+22); }
+        else if(it.type===1) { ctx.fillStyle = "#FFE0B2"; ctx.fillRect(ix+10, it.y+15, 10, 15); ctx.fillStyle = "#D50000"; ctx.beginPath(); ctx.arc(ix+15, it.y+15, 15, Math.PI, 0); ctx.fill(); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(ix+10, it.y+10, 3, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(ix+20, it.y+8, 4, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(ix+5, it.y+15, 2, 0, Math.PI*2); ctx.fill(); }
         else { ctx.fillStyle="#2979FF"; ctx.fillRect(ix,it.y,it.w,it.h); ctx.fillStyle="#FFF"; ctx.fillText("K", ix+10, it.y+20); }
+    });
+    
+    // Draw Boss Projectiles
+    projectiles.forEach(p => {
+        let px = p.x - camX;
+        ctx.fillStyle = (p.type==0)?"#D50000":((p.type==1)?"#AA00FF":"#FFD700");
+        drawCircle(px, p.y, 10, ctx.fillStyle);
+        ctx.fillStyle = "#fff"; drawCircle(px, p.y, 5, "#fff");
     });
 
     if(goal) { ctx.fillStyle=t.pipe; ctx.fillRect(goal.x-camX-5, goal.y, goal.w+10, 30); ctx.fillStyle="#fff"; ctx.fillText("GOAL", goal.x-camX+15, goal.y+60); }
 
     if(boss && !boss.dead) {
         let bx = boss.x - camX;
-        let shake = (boss.iframes>0)?(Math.random()*4-2):0;
-        ctx.save(); ctx.translate(bx + boss.w/2 + shake, boss.y + boss.h/2);
-        if(boss.style === 0) {
+        let shakeB = (boss.iframes>0)?(Math.random()*4-2):0;
+        ctx.save(); ctx.translate(bx + boss.w/2 + shakeB, boss.y + boss.h/2);
+        
+        // Attack Warning
+        if(boss.action === 'jump_attack' || boss.action === 'shoot') {
+             ctx.beginPath(); ctx.arc(0,0, boss.w, 0, Math.PI*2);
+             ctx.fillStyle = `rgba(255, 0, 0, ${Math.abs(Math.sin(frames*0.2)) * 0.5})`;
+             ctx.fill();
+        }
+
+        if(boss.style === 0) { // TITAN
             ctx.fillStyle = boss.color; ctx.fillRect(-boss.w/2, -boss.h/2, boss.w, boss.h);
-            drawEye(-15, -10, 8, -1); drawEye(15, -10, 8, -1);
-            ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.moveTo(-boss.w/2, -boss.h/2); ctx.lineTo(-boss.w/2-10, -boss.h/2+20); ctx.lineTo(-boss.w/2, -boss.h/2+40); ctx.fill();
+            // Spikes
+            ctx.fillStyle = "#555";
+            ctx.beginPath(); ctx.moveTo(-boss.w/2, -boss.h/2); ctx.lineTo(-boss.w/2-10, -boss.h/2+20); ctx.lineTo(-boss.w/2, -boss.h/2+40); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(boss.w/2, -boss.h/2); ctx.lineTo(boss.w/2+10, -boss.h/2+20); ctx.lineTo(boss.w/2, -boss.h/2+40); ctx.fill();
+            drawEye(-15, -10, 8, (player.x<boss.x)?-2:2); drawEye(15, -10, 8, (player.x<boss.x)?-2:2);
+            // Angry Eyebrows
+            ctx.fillStyle = "#000"; ctx.beginPath(); ctx.moveTo(-30, -25); ctx.lineTo(0, -10); ctx.lineTo(30, -25); ctx.lineTo(30,-20); ctx.lineTo(0,-5); ctx.lineTo(-30,-20); ctx.fill();
         } 
-        else if (boss.style === 1) {
+        else if (boss.style === 1) { // NINJA
+            if(Math.abs(boss.dx) > 2) ctx.globalAlpha = 0.5; // Motion Blur
             drawCircle(0, 0, boss.w/2, boss.color);
-            ctx.fillStyle = "#000"; ctx.fillRect(-boss.w/2, -10, boss.w, 15);
+            ctx.globalAlpha = 1.0;
+            // Headband
+            ctx.fillStyle = "#D50000"; ctx.fillRect(-boss.w/2, -20, boss.w, 10);
+            let tailY = Math.sin(frames*0.5)*10;
+            ctx.beginPath(); ctx.moveTo(boss.w/2, -15); ctx.lineTo(boss.w/2+30, -15+tailY); ctx.lineTo(boss.w/2+30, -5+tailY); ctx.lineTo(boss.w/2, -5); ctx.fill();
             ctx.fillStyle = "#fff"; ctx.fillRect(-15, -8, 10, 4); ctx.fillRect(5, -8, 10, 4);
         } 
-        else {
+        else { // KING
             ctx.fillStyle = boss.color; ctx.fillRect(-boss.w/2, -boss.h/2, boss.w, boss.h);
             ctx.fillStyle = "#FFA000"; ctx.fillRect(-boss.w/2+10, -boss.h/2+10, boss.w-20, boss.h-20);
-            drawEye(-30, 0, 12, -1); drawEye(30, 0, 12, -1);
-            ctx.fillStyle = "#FFFF00"; ctx.beginPath(); ctx.moveTo(-40,-boss.h/2); ctx.lineTo(-20,-boss.h/2-30); ctx.lineTo(0,-boss.h/2); ctx.lineTo(20,-boss.h/2-30); ctx.lineTo(40,-boss.h/2); ctx.fill();
+            // Crown
+            ctx.fillStyle = "#FFAB00"; ctx.beginPath(); ctx.moveTo(-boss.w/2, -boss.h/2); ctx.lineTo(-boss.w/2, -boss.h/2-30); ctx.lineTo(-boss.w/4, -boss.h/2-10); ctx.lineTo(0, -boss.h/2-40); ctx.lineTo(boss.w/4, -boss.h/2-10); ctx.lineTo(boss.w/2, -boss.h/2-30); ctx.lineTo(boss.w/2, -boss.h/2); ctx.fill();
+            drawEye(-30, 0, 12, (player.x<boss.x)?-2:2); drawEye(30, 0, 12, (player.x<boss.x)?-2:2);
         }
         ctx.restore();
     }
@@ -637,7 +689,6 @@ function draw() {
         if(p.life<=0) particles.splice(i, 1);
     });
     
-    // Float Text
     floatText.forEach((f, i) => {
         f.y -= 1; f.life--;
         ctx.fillStyle = "#fff"; ctx.font = "bold 20px Arial"; ctx.fillText(f.t, f.x-camX, f.y);
@@ -652,36 +703,21 @@ function draw() {
              ctx.fillStyle="#FFEB3B"; ctx.fillRect(px+player.w-5, py+18, 5, 5);
         } else {
              let dir = player.facing;
+             let hatC = "#b71c1c"; let suitC = "#0D47A1";
+             if (player.hp >= 3) { hatC = "#ECEFF1"; suitC = "#D32F2F"; } else if (player.hp === 2) { hatC = "#D32F2F"; suitC = "#1976D2"; }
              
-             // VISUAL EVOLUTION
-             let hatC = "#b71c1c"; // HP 1 (Red Hat)
-             let suitC = "#0D47A1"; // HP 1 (Blue Suit)
-             
-             if (player.hp >= 3) {
-                 // Elite Mode (Fire Style: White Hat, Red Suit)
-                 hatC = "#ECEFF1"; 
-                 suitC = "#D32F2F";
-             } else if (player.hp === 2) {
-                 // Big Mode (Red Hat, Blue Suit - Same colors, bigger size handled by player.w/h)
-                 hatC = "#D32F2F";
-                 suitC = "#1976D2";
-             }
-             
-             ctx.fillStyle = hatC;
-             ctx.fillRect(px, py, player.w, 10); ctx.fillRect(dir>0?px+5:px-5, py+8, player.w, 4);
-             ctx.fillStyle = "#FFCCBC";
-             ctx.fillRect(px+5, py+10, player.w-10, 10);
+             ctx.fillStyle = hatC; ctx.fillRect(px, py, player.w, 10); ctx.fillRect(dir>0?px+5:px-5, py+8, player.w, 4);
+             ctx.fillStyle = "#FFCCBC"; ctx.fillRect(px+5, py+10, player.w-10, 10);
              drawEye(dir>0?px+22:px+10, py+15, 3, dir);
-             ctx.fillStyle = suitC;
-             ctx.fillRect(px+5, py+20, player.w-10, 15);
+             ctx.fillStyle = suitC; ctx.fillRect(px+5, py+20, player.w-10, 15);
              ctx.fillStyle = hatC; 
              let run = (Math.abs(player.dx)>0.1) ? Math.sin(frames*0.5)*5 : 0;
              ctx.fillRect(px+(dir>0?0:20)+run, py+22, 8, 8);
-             ctx.fillStyle = "#000";
-             ctx.fillRect(px+5-run, py+35, 10, 5); ctx.fillRect(px+18+run, py+35, 10, 5);
+             ctx.fillStyle = "#000"; ctx.fillRect(px+5-run, py+35, 10, 5); ctx.fillRect(px+18+run, py+35, 10, 5);
         }
     }
-
+    
+    ctx.restore();
     document.getElementById('score-ui').innerText="SCORE: "+score;
 }
 
