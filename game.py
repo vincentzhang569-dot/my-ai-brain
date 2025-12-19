@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V43 Physics & Loot",
+    page_title="Super AI Kart: V44 Evolution",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -96,7 +96,7 @@ game_html = """
 
     <div id="menu">
         <h1 id="menu-title">SUPER AI KART</h1>
-        <p id="menu-sub">V43: Physics Fix & Harvest</p>
+        <p id="menu-sub">V44: Evolution & Fortune</p>
         <div class="btn-container">
             <button id="btn-retry" class="start-btn" onclick="retryLevel()" style="display:none; background: #4CAF50;">RETRY</button>
             <button id="btn-start" class="start-btn" onclick="resetGame()">PLAY</button>
@@ -195,12 +195,30 @@ function playBGM() {
     }
 }
 
+// --- Helper for Coins ---
+function addCoin(x, y, amount=1) {
+    coinCount += amount;
+    score += 100 * amount;
+    // Check 50 coins reward
+    if(coinCount >= 50) {
+        coinCount -= 50;
+        player.hp++;
+        if(player.hp >= 2) { player.w=40; player.h=56; }
+        playTone(600, 'square', 0.3); playTone(800, 'square', 0.3);
+        floatText.push({x:player.x, y:player.y-20, t:"+1 HP", life:60});
+    }
+    // Sound & Visual
+    playTone(800 + (Math.random()*200), 'square', 0.1);
+    floatText.push({x:x, y:y-20, t:"+1 🪙", life:30});
+}
+
 // --- Init & Gen ---
 function initLevel(lvl) {
     blocks = []; enemies = []; particles = []; items = []; boss = null; floatText = [];
     let t = BIOMES[lvl % BIOMES.length];
     
     player.x = 100; player.y = 0; player.dx=0; player.dy=0;
+    // Keep size if HP is high from previous level
     player.w = player.hp > 1 ? 40 : 32; 
     player.h = player.hp > 1 ? 56 : 40; 
     player.inPipe = false; player.dead = false; player.invul = 0;
@@ -217,6 +235,7 @@ function initLevel(lvl) {
         let rng = Math.random();
         if(Math.random() < 0.25) {
             let cy = groundY - 120 - Math.random()*80;
+            // Loose coins in air
             for(let k=0; k<4; k++) items.push({ x: x + k*35, y: cy + Math.sin(k)*20, w:30, h:30, type:0, dy:0, dx:0, state:'static' });
         }
 
@@ -299,11 +318,17 @@ function spawnEnemy(x, y, type) {
 
 function spawnItem(block) {
     if(!block.content) return;
-    let type = (block.content==="coin")?0:(block.content==="mushroom"?1:2);
-    let isMoving = (type !== 0);
     
-    // FIX: Force RIGHT direction (positive dx)
-    let idX = isMoving ? 2 : 0; 
+    // FEATURE: Instant Coin Collection
+    if(block.content === "coin") {
+        addCoin(block.x + 30, block.y); // Instant collect
+        block.content=null; block.hit=true;
+        return; 
+    }
+
+    // Only Mushrooms/Karts fall
+    let type = (block.content==="mushroom"?1:2);
+    let idX = 2; // Always right
 
     items.push({ x: block.x+15, y: block.y, w:30, h:30, type:type, dy:-6, dx:idX, state:'spawning' });
     playTone(500, 'square', 0.1);
@@ -396,16 +421,12 @@ function update() {
 
                 if(boss.hp <= 0) { 
                     boss.dead = true; score += 5000; playTone(50, 'noise', 0.8);
-                    // BOSS LOOT FOUNTAIN (FIXED: Slower speed)
+                    // BOSS LOOT
                     for(let i=0; i<30; i++) {
                         items.push({
-                             x: boss.x + boss.w/2,
-                             y: boss.y + boss.h/2,
-                             w: 30, h: 30,
-                             type: 0, // Coin
-                             dx: (Math.random()-0.5) * 10, // Reduced spread
-                             dy: -5 - Math.random()*8,     // Reduced jump
-                             state: 'moving'
+                             x: boss.x + boss.w/2, y: boss.y + boss.h/2,
+                             w: 30, h: 30, type: 0, 
+                             dx: (Math.random()-0.5) * 10, dy: -5 - Math.random()*8, state: 'moving'
                         });
                     }
                 }
@@ -417,33 +438,22 @@ function update() {
     items.forEach((it, i) => {
         if(it.state!=='static') { 
             it.dy+=0.5; it.x+=it.dx; it.y+=it.dy;
-            
-            // LOOT FRICTION (Coins only)
-            if(it.type === 0) {
-                 it.dx *= 0.95; // Strong friction for coins
-            }
-            
+            if(it.type === 0) { it.dx *= 0.95; }
             if(it.y > canvas.height) items.splice(i,1); 
         }
         
         blocks.forEach(b => { 
             if(colCheck(it, b) && it.state!=='static') { 
-                // PHYSICS FIX: If moving UP (spawning), ignore side collisions
                 if (it.dy < 0) return;
-
-                if(it.dy>0 && it.y+it.h-it.dy <= b.y+15) { // Land on top
+                if(it.dy>0 && it.y+it.h-it.dy <= b.y+15) { 
                     it.y=b.y-it.h; 
                     it.dy= -it.dy * 0.5; 
                     if(Math.abs(it.dy) < 1) it.dy=0;
-                } else { 
-                    // Bounce off walls
-                    it.dx*=-1; 
-                } 
+                } else { it.dx*=-1; } 
             } 
         });
 
-        // GROUND COLLISION FOR LOOT
-        if(it.y > canvas.height - 110) { // Approx ground level
+        if(it.y > canvas.height - 110) { 
             it.y = canvas.height - 110;
             it.dy = -it.dy * 0.5;
             if(Math.abs(it.dy) < 1) it.dy=0;
@@ -452,14 +462,7 @@ function update() {
         if(colCheck(player, it)) {
             items.splice(i,1); 
             if(it.type===0) { 
-                score+=100; 
-                coinCount++;
-                if(coinCount >= 50) {
-                    coinCount -= 50;
-                    player.hp++;
-                    playTone(600, 'square', 0.3); playTone(800, 'square', 0.3);
-                    floatText.push({x:player.x, y:player.y-20, t:"+1 HP", life:60});
-                }
+                addCoin(it.x, it.y); // Helper function
             } 
             else if(it.type===1) { 
                 player.hp++; 
@@ -470,7 +473,6 @@ function update() {
             } else { 
                 player.kart=true; player.timer=600; player.w=48; player.h=24; 
             }
-            playTone(it.type===0?800:200, 'sine', 0.1);
         }
     });
 
@@ -483,8 +485,14 @@ function update() {
         else { e.x += e.dx; if(frames%60==0 && Math.random()<0.3) e.dx *= -1; }
         
         if(colCheck(player, e)) {
-            if(player.kart) { e.dead=true; score+=500; spawnExplosion(e.x,e.y); }
-            else if(e.type !== 2 && player.dy > 0 && player.y+player.h < e.y+e.h*0.8) { e.dead=true; player.dy=-8; score+=200; spawnExplosion(e.x,e.y); } 
+            if(player.kart) { 
+                e.dead=true; score+=500; spawnExplosion(e.x,e.y); 
+                addCoin(e.x, e.y); // Kart Kill Reward
+            }
+            else if(e.type !== 2 && player.dy > 0 && player.y+player.h < e.y+e.h*0.8) { 
+                e.dead=true; player.dy=-8; score+=200; spawnExplosion(e.x,e.y); 
+                addCoin(e.x, e.y); // Stomp Kill Reward
+            } 
             else { if(player.invul<=0) takeDamage(); }
         }
     });
@@ -525,7 +533,8 @@ function draw() {
     document.getElementById('world-ui').innerText = "WORLD 1-" + (level+1);
     
     let hpText = "HP: " + player.hp;
-    if(player.hp > 2) hpText += " (MAX)";
+    if(player.hp >= 3) hpText += " (ELITE)";
+    else if(player.hp == 2) hpText += " (BIG)";
     document.getElementById('hp-ui').innerText = hpText;
     document.getElementById('hp-ui').style.color = (player.hp>1) ? "#00E676" : "#FF5252";
     document.getElementById('coin-ui').innerText = "🪙 " + coinCount + " / 50";
@@ -643,8 +652,20 @@ function draw() {
              ctx.fillStyle="#FFEB3B"; ctx.fillRect(px+player.w-5, py+18, 5, 5);
         } else {
              let dir = player.facing;
-             let hatC = player.hp>2 ? "#FFD700" : "#b71c1c";
-             let suitC = player.hp>2 ? "#FFF" : "#0D47A1";
+             
+             // VISUAL EVOLUTION
+             let hatC = "#b71c1c"; // HP 1 (Red Hat)
+             let suitC = "#0D47A1"; // HP 1 (Blue Suit)
+             
+             if (player.hp >= 3) {
+                 // Elite Mode (Fire Style: White Hat, Red Suit)
+                 hatC = "#ECEFF1"; 
+                 suitC = "#D32F2F";
+             } else if (player.hp === 2) {
+                 // Big Mode (Red Hat, Blue Suit - Same colors, bigger size handled by player.w/h)
+                 hatC = "#D32F2F";
+                 suitC = "#1976D2";
+             }
              
              ctx.fillStyle = hatC;
              ctx.fillRect(px, py, player.w, 10); ctx.fillRect(dir>0?px+5:px-5, py+8, player.w, 4);
