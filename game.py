@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V37 Ecology Update",
+    page_title="Super AI Kart: V38 Boss & Loot",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -31,6 +31,11 @@ game_html = """
     #score-ui { left: 20px; }
     #world-ui { right: 20px; color: #FFD700; }
     #power-ui { top: 60px; left: 20px; color: #00E676; font-size: 20px; display: none; }
+    #boss-ui { 
+        position: absolute; top: 100px; left: 50%; transform: translateX(-50%); 
+        width: 300px; height: 20px; border: 2px solid #fff; display: none; 
+    }
+    #boss-hp { width: 100%; height: 100%; background: #D32F2F; transition: width 0.2s; }
 
     #controls { display: none; position: absolute; bottom: 0; width: 100%; height: 100%; pointer-events: none; }
     .btn {
@@ -67,6 +72,7 @@ game_html = """
     <div id="score-ui" class="hud">SCORE: 0</div>
     <div id="power-ui" class="hud">MODE: NORMAL</div>
     <div id="world-ui" class="hud">WORLD 1-1</div>
+    <div id="boss-ui"><div id="boss-hp"></div></div>
     
     <div id="controls">
         <div class="btn" id="btn-L">◀</div>
@@ -76,7 +82,7 @@ game_html = """
 
     <div id="menu">
         <h1 id="menu-title">SUPER AI KART</h1>
-        <p id="menu-sub">V37: Evolution & Terrain</p>
+        <p id="menu-sub">V38: BOSS BATTLE & LOOT</p>
         <div class="btn-container">
             <button id="btn-retry" class="start-btn retry-btn" onclick="retryLevel()" style="display:none;">TRY AGAIN</button>
             <button id="btn-start" class="start-btn" onclick="resetGame()">START GAME</button>
@@ -103,7 +109,7 @@ let bgmTimer = null;
 let player = { 
     x:100, y:0, w:32, h:40, dx:0, dy:0, 
     ground:false, jumps:0, dead:false, inPipe:false,
-    big: false, kart: false, timer: 0 
+    big: false, kart: false, timer: 0, invul: 0 
 };
 let input = { l:false, r:false, j:false, jLock:false };
 let camX = 0;
@@ -112,13 +118,14 @@ let enemies = [];
 let particles = [];
 let items = []; 
 let goal = null;
+let boss = null; // BOSS对象
 
 const BIOMES = [
-    { name: "PLAINS", bg: "#5C94FC", ground: "#C84C0C", brick: "#FFB74D", pipe: "#00E676", fricMod: 1.0 },
-    { name: "DESERT", bg: "#FFE0B2", ground: "#EF6C00", brick: "#FFCC80", pipe: "#2E7D32", fricMod: 1.0 }, // V35护眼色
-    { name: "CAVE",   bg: "#212121", ground: "#5D4037", brick: "#8D6E63", pipe: "#66BB6A", fricMod: 1.0 },
-    { name: "SNOW",   bg: "#81D4FA", ground: "#E1F5FE", brick: "#B3E5FC", pipe: "#0288D1", fricMod: 0.2 }, 
-    { name: "HILLS",  bg: "#C5E1A5", ground: "#33691E", brick: "#AED581", pipe: "#558B2F", fricMod: 1.0 }
+    { name: "PLAINS", bg: "#5C94FC", ground: "#C84C0C", brick: "#FFB74D", pipe: "#00E676" },
+    { name: "DESERT", bg: "#FFE0B2", ground: "#EF6C00", brick: "#FFCC80", pipe: "#2E7D32" },
+    { name: "CAVE",   bg: "#212121", ground: "#5D4037", brick: "#8D6E63", pipe: "#66BB6A" },
+    { name: "SNOW",   bg: "#81D4FA", ground: "#E1F5FE", brick: "#B3E5FC", pipe: "#0288D1" }, 
+    { name: "HILLS",  bg: "#C5E1A5", ground: "#33691E", brick: "#AED581", pipe: "#558B2F" }
 ];
 
 function initAudio() {
@@ -141,6 +148,15 @@ function playTone(f, t, d, v=0.1) {
 
 function playBGM() {
     if(!running || player.dead) return;
+    // 如果Boss存活且在屏幕内，播放Boss战音乐
+    if(boss && !boss.dead && boss.x < camX + canvas.width + 100) {
+        let notes = [110, 110, 123, 110, 98, 87, 82, 110]; // 紧张的低音
+        notes.forEach((freq, i) => { 
+            setTimeout(() => { if(running) playTone(freq, 'sawtooth', 0.2, 0.1); }, i * 150); 
+        });
+        return;
+    }
+
     let t = BIOMES[level % BIOMES.length];
     let notes = []; let wave = 'triangle'; let speed = 200;
 
@@ -158,99 +174,106 @@ function playBGM() {
     notes.forEach((freq, i) => { if(freq > 0) setTimeout(() => { if(running) playTone(freq, wave, 0.1, 0.05); }, i * speed); });
 }
 
-// --- 地图生成器 V2.0: 复杂地形 ---
 function initLevel(lvl) {
-    blocks = []; enemies = []; particles = []; items = [];
+    blocks = []; enemies = []; particles = []; items = []; boss = null;
     let t = BIOMES[lvl % BIOMES.length];
     
     player.x = 100; player.y = 0; player.dx=0; player.dy=0;
     player.w = player.big ? 40 : 32; player.h = player.big ? 56 : 40; 
-    player.inPipe = false; player.dead = false;
+    player.inPipe = false; player.dead = false; player.invul = 0;
     camX = 0;
+    document.getElementById('boss-ui').style.display = 'none';
 
-    // 起点安全区
     let groundY = canvas.height - 80;
     blocks.push({x:-200, y:groundY, w:800, h:100, c: t.ground, type:'ground'}); 
     
     let x = 600;
     let endX = 3500 + lvl * 800;
     
-    // 地形生成循环
     while(x < endX) {
         let segmentType = Math.random();
         
-        // 1. 平地与基本怪物 (40%)
+        // --- 增加金币生成逻辑 ---
+        if(Math.random() < 0.3) {
+            // 空中生成一排金币
+            let coinsY = groundY - 100 - Math.random()*100;
+            for(let k=0; k<5; k++) {
+                items.push({ x: x + k*40, y: coinsY, w:30, h:30, type:0, dy:0, dx:0, state:'static' });
+            }
+        }
+
         if(segmentType < 0.4) {
             let w = 400 + Math.random() * 400;
             blocks.push({x:x, y:groundY, w:w, h:200, c: t.ground, type:'ground'});
-            
-            // 随机生成怪：陆地Walker 或 跳跃者Jumper
             if(Math.random() < 0.6) spawnEnemy(x + w/2, groundY-40, (Math.random()<0.3)?'jumper':'walker');
             
-            // 砖块
-            if(Math.random() < 0.7) createBricks(x + 100, groundY - 140, t);
+            // --- 疯狂增加砖块 ---
+            if(Math.random() < 0.9) createBricks(x + 100, groundY - 140, t); // 概率由 0.7 提至 0.9
             x += w;
         } 
-        // 2. 深坑与飞行怪 (20%)
         else if(segmentType < 0.6) {
-            let gap = 150 + Math.random() * 80; // 坑宽
-            // 坑中间放个飞行怪 (蝙蝠)
+            let gap = 150 + Math.random() * 80;
             spawnEnemy(x + gap/2, groundY - 150 - Math.random()*100, 'flyer');
+            // 坑上面悬浮金币
+            items.push({ x: x + gap/2, y: groundY-150, w:30, h:30, type:0, dy:0, dx:0, state:'static' });
             x += gap; 
         }
-        // 3. 楼梯/高台 (20%)
         else if(segmentType < 0.8) {
             let steps = 3 + Math.floor(Math.random()*3);
-            let startX = x;
+            let platW = 150;
             for(let i=0; i<steps; i++) {
                 blocks.push({x:x, y:groundY - i*40, w:60, h:200, c: t.brick, type:'ground'});
                 x += 60;
             }
-            // 楼梯顶端放个平台
-            let platW = 150;
             blocks.push({x:x, y:groundY - (steps-1)*40, w:platW, h:200, c: t.ground, type:'ground'});
-             // 平台上有几率刷怪
             if(Math.random()<0.5) spawnEnemy(x+platW/2, groundY - (steps-1)*40 - 40, 'walker');
+            // 平台上有奖励
+            createBricks(x+platW/2-30, groundY - (steps-1)*40 - 140, t);
             x += platW;
-            // 下楼梯？或者直接断开变成坑
-            if(Math.random() < 0.5) { x += 100; } // 变成坑
+            if(Math.random() < 0.5) x += 100;
         }
-        // 4. 管道区域 (20%)
         else {
             let w = 300;
             blocks.push({x:x, y:groundY, w:w, h:200, c: t.ground, type:'ground'});
-            // 放个管道
             let ph = 60 + Math.random()*60;
             let px = x + 100;
             blocks.push({x:px, y:groundY-ph, w:60, h:ph, c: t.pipe, type:'pipe'});
-            // 管道里必有食人花
             spawnEnemy(px+10, groundY-ph, 'plant');
             x += w;
         }
     }
     
-    blocks.push({x:x, y:groundY, w:600, h:100, c: t.ground, type:'ground'});
-    goal = { x: x + 300, y: groundY-150, w: 70, h: 150, cx: x+335 };
+    // --- BOSS ARENA ---
+    // 生成一个宽阔的平台作为BOSS战场所
+    blocks.push({x:x, y:groundY, w:1000, h:100, c: t.ground, type:'ground'});
+    
+    // 初始化BOSS
+    boss = {
+        x: x + 600, y: groundY - 80, w: 80, h: 80, 
+        dx: -3, dy: 0, hp: 3, maxHp: 3,
+        iframes: 0, dead: false, color: "#D32F2F", type: 'boss'
+    };
+    
+    x += 1000;
+    goal = { x: x + 50, y: groundY-150, w: 70, h: 150, cx: x+85 };
     blocks.push({ x: goal.x, y: goal.y, w: goal.w, h: goal.h, c: t.pipe, type:'pipe' });
+    blocks.push({x:x, y:groundY, w:300, h:100, c: t.ground, type:'ground'});
 }
 
 function createBricks(bx, by, t) {
     let rng = Math.random();
     let content = null;
-    if(rng < 0.4) content = "coin";
-    else if(rng < 0.5) content = "mushroom";
-    else if(rng < 0.55) content = "kart";
+    // --- 提高物品掉落率 ---
+    if(rng < 0.5) content = "coin"; // 50% 金币
+    else if(rng < 0.7) content = "mushroom"; // 20% 蘑菇
+    else if(rng < 0.8) content = "kart"; // 10% 卡丁车
     
     blocks.push({ x:bx, y:by, w:60, h:60, c: content?"#FFD700":t.brick, type:'brick', content:content, hit:false });
     blocks.push({x:bx+60, y:by, w:60, h:60, c: t.brick, type:'brick', content:null});
     blocks.push({x:bx-60, y:by, w:60, h:60, c: t.brick, type:'brick', content:null});
-    
-    // 砖块上可能有飞行怪巡逻
-    if(Math.random()<0.3) spawnEnemy(bx, by-60, 'flyer');
 }
 
 function spawnEnemy(x, y, type) {
-    // type: walker (0), flyer (1), plant (2), jumper (3)
     let e = { x:x, y:y, w:36, h:36, dx:-1.5, dy:0, dead:false, type:0, anchorY:y, timer:0 };
     if(type === 'flyer') { e.type = 1; e.dx = -2; e.w=40; e.h=20; }
     else if(type === 'plant') { e.type = 2; e.dx = 0; e.y += 30; e.anchorY = y; e.w=40; e.h=40; }
@@ -270,6 +293,8 @@ function spawnItem(block) {
 function update() {
     if(!running) return;
     frames++;
+
+    if(player.invul > 0) player.invul--;
 
     if(player.kart) {
         player.timer--;
@@ -313,9 +338,79 @@ function update() {
         }
     });
 
-    // 道具物理
+    // --- BOSS LOGIC ---
+    if(boss && !boss.dead) {
+        // UI Update
+        document.getElementById('boss-ui').style.display = 'block';
+        document.getElementById('boss-hp').style.width = (boss.hp / boss.maxHp * 100) + '%';
+        
+        // Physics
+        if(boss.x < player.x + 800) { // Activate when close
+            boss.x += boss.dx;
+            boss.dy += PHYSICS.grav;
+            boss.y += boss.dy;
+            
+            // Patrol & Ground collision
+            if(boss.y > canvas.height - 180) { boss.y = canvas.height - 180; boss.dy = 0; }
+            
+            // Simple AI
+            if(boss.x < camX) boss.dx = Math.abs(boss.dx); // Keep in arena
+            if(boss.x > goal.x - 100) boss.dx = -Math.abs(boss.dx);
+            
+            // Charge at player
+            if(frames % 120 === 0) { 
+                boss.dy = -10; // Jump
+                boss.dx = (player.x < boss.x) ? -5 : 5; // Fast charge
+            }
+            
+            if(boss.iframes > 0) boss.iframes--;
+
+            // Collision with Player
+            if(colCheck(player, boss)) {
+                if(player.kart) {
+                    boss.hp = 0; boss.dead = true; score += 5000;
+                    spawnExplosion(boss.x + boss.w/2, boss.y + boss.h/2);
+                    playTone(100, 'noise', 0.5);
+                }
+                else if(player.dy > 0 && player.y + player.h < boss.y + boss.h * 0.6) {
+                    // Hit boss head
+                    if(boss.iframes <= 0) {
+                        boss.hp--;
+                        boss.iframes = 60;
+                        player.dy = -10; // Bounce
+                        playTone(150, 'square', 0.3);
+                        spawnExplosion(boss.x + boss.w/2, boss.y);
+                        
+                        if(boss.hp <= 0) {
+                            boss.dead = true; score += 3000;
+                            playTone(50, 'noise', 0.8);
+                        } else {
+                            // Enrage
+                            boss.dx *= 1.5; 
+                        }
+                    }
+                } else {
+                    // Hurt player
+                    if(player.invul <= 0) {
+                        if(player.big) { 
+                            player.big=false; player.w=32; player.h=40; 
+                            player.invul = 60; playTone(100,'sawtooth',0.5); 
+                        }
+                        else gameOver();
+                    }
+                }
+            }
+        }
+    } else {
+         document.getElementById('boss-ui').style.display = 'none';
+    }
+
+    // Items
     items.forEach((it, i) => {
-        if(it.type === 0) { it.y += it.dy; if(it.dy<0) { it.y+=it.dy; it.dy+=0.5; } }
+        if(it.type === 0) { 
+            // Static coins or physics coins
+            if(it.state !== 'static') { it.y += it.dy; if(it.dy<0) { it.y+=it.dy; it.dy+=0.5; } }
+        }
         else {
             if(it.state==='spawning') { it.y+=it.dy; if(it.dy<0) it.dy+=0.5; if(it.dy>=0) it.state='moving'; }
             else {
@@ -329,53 +424,27 @@ function update() {
             else if(it.type===1) { player.big=true; player.w=40; player.h=56; playTone(200,'square',0.3); }
             else if(it.type===2) { player.kart=true; player.timer=600; player.w=48; player.h=24; playTone(100,'sawtooth',0.5); }
         }
-        if(it.y > canvas.height+100) items.splice(i,1);
     });
 
-    // --- 怪物AI增强 ---
+    // Enemies
     enemies.forEach(e => {
         if(e.dead) return;
         e.timer++;
-        
-        // 1. 飞行怪 (Flyer): 正弦波飞行
-        if(e.type === 1) {
-            e.x += e.dx;
-            e.y = e.anchorY + Math.sin(frames * 0.05) * 60; // 上下波浪飞
-        } 
-        // 2. 食人花 (Plant): 管道伸缩
-        else if(e.type === 2) {
-            // 每200帧一个周期，伸出100帧，缩回100帧
-            let cycle = e.timer % 200;
-            if(cycle < 100 && e.y > e.anchorY - 40) e.y -= 1; // 升起
-            if(cycle >= 100 && e.y < e.anchorY) e.y += 1;   // 缩回
-        }
-        // 3. 跳跃怪 (Jumper): 地面偶尔跳跃
-        else if(e.type === 3) {
-            e.x += e.dx;
-            e.dy += PHYSICS.grav; e.y += e.dy;
-            if(e.y >= e.anchorY) { e.y = e.anchorY; e.dy = 0; } // 简单地面判定
-            // 随机跳跃
-            if(Math.random() < 0.02 && e.dy === 0) e.dy = -10; 
-        }
-        // 0. 普通怪 (Walker)
-        else {
-            e.x += e.dx;
-            if(frames%60==0 && Math.random()<0.3) e.dx *= -1;
-        }
+        if(e.type === 1) { e.x += e.dx; e.y = e.anchorY + Math.sin(frames * 0.05) * 60; } 
+        else if(e.type === 2) { let cycle = e.timer % 200; if(cycle < 100 && e.y > e.anchorY - 40) e.y -= 1; if(cycle >= 100 && e.y < e.anchorY) e.y += 1; }
+        else if(e.type === 3) { e.x += e.dx; e.dy += PHYSICS.grav; e.y += e.dy; if(e.y >= e.anchorY) { e.y = e.anchorY; e.dy = 0; } if(Math.random() < 0.02 && e.dy === 0) e.dy = -10; }
+        else { e.x += e.dx; if(frames%60==0 && Math.random()<0.3) e.dx *= -1; }
 
         if(colCheck(player, e)) {
-            if(player.kart) { e.dead=true; score+=500; playTone(100,'noise',0.2); }
-            // 踩踏判定：除了食人花不能踩
-            else if(e.type !== 2 && player.dy > 0 && player.y+player.h < e.y+e.h*0.8) {
-                e.dead=true; player.dy=-8; score+=200; playTone(600,'noise',0.1);
-            } else {
-                if(player.big) { player.big=false; player.w=32; player.h=40; player.dy=-5; e.dx*=-1; playTone(150,'sawtooth',0.3); }
-                else gameOver();
-            }
+            if(player.kart) { e.dead=true; score+=500; playTone(100,'noise',0.2); spawnExplosion(e.x,e.y); }
+            else if(e.type !== 2 && player.dy > 0 && player.y+player.h < e.y+e.h*0.8) { e.dead=true; player.dy=-8; score+=200; playTone(600,'noise',0.1); spawnExplosion(e.x,e.y); } 
+            else { if(player.big) { player.big=false; player.w=32; player.h=40; player.dy=-5; player.invul=60; playTone(150,'sawtooth',0.3); } else if(player.invul<=0) gameOver(); }
         }
     });
     
+    // Pipe Entry
     if(goal && player.ground) {
+        if(boss && !boss.dead) { /* Block exit if boss alive? No, let them run if they can! (Optional design, currently allowed) */ }
         if(Math.abs(player.y-(goal.y-player.h))<10 && player.x>goal.x && player.x<goal.x+goal.w) {
              if(Math.abs(player.dx)<2) { player.inPipe=true; playTone(100,'sawtooth',0.8); }
         }
@@ -385,13 +454,17 @@ function update() {
     requestAnimationFrame(update);
 }
 
+function spawnExplosion(x, y) {
+    for(let i=0;i<10;i++) particles.push({x:x,y:y,dx:(Math.random()-0.5)*10,dy:(Math.random()-0.5)*10,life:20,c:'#fff'});
+}
+
 function colCheck(a, b) { return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
 
 function gameOver() {
     running = false;
     document.getElementById('menu').style.display='flex';
     document.getElementById('menu-title').innerText="GAME OVER";
-    document.getElementById('menu-sub').innerText="World "+(level+1)+" Score: "+score;
+    document.getElementById('boss-ui').style.display = 'none';
     document.getElementById('btn-retry').style.display='block';
     document.getElementById('btn-start').innerText="MAIN MENU";
 }
@@ -403,7 +476,7 @@ function startGame() { document.getElementById('menu').style.display='none'; pla
 function draw() {
     let t = BIOMES[level % BIOMES.length];
     ctx.fillStyle = t.bg; ctx.fillRect(0,0,canvas.width,canvas.height);
-    document.getElementById('world-ui').innerText = "WORLD 1-" + (level+1) + " (" + t.name + ")";
+    document.getElementById('world-ui').innerText = "WORLD 1-" + (level+1);
 
     blocks.forEach(b => {
         if(b.x > camX+canvas.width || b.x+b.w < camX) return;
@@ -421,52 +494,49 @@ function draw() {
 
     if(goal) { ctx.fillStyle=t.pipe; ctx.fillRect(goal.x-camX-5, goal.y, goal.w+10, 30); ctx.fillStyle="#fff"; ctx.fillText("GOAL", goal.x-camX+15, goal.y+60); }
 
-    // --- 怪物绘制 ---
+    // DRAW BOSS
+    if(boss && !boss.dead) {
+        let bx = boss.x - camX;
+        if(boss.iframes % 4 < 2) {
+            ctx.fillStyle = (boss.hp===1) ? "#D50000" : "#B71C1C"; // Low HP = Brighter Red
+            ctx.fillRect(bx, boss.y, boss.w, boss.h);
+            // Spikes
+            ctx.fillStyle = "#fff"; 
+            ctx.beginPath(); ctx.moveTo(bx, boss.y); ctx.lineTo(bx+20, boss.y-20); ctx.lineTo(bx+40, boss.y); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(bx+40, boss.y); ctx.lineTo(bx+60, boss.y-20); ctx.lineTo(bx+80, boss.y); ctx.fill();
+            // Eyes
+            ctx.fillStyle = "#000"; ctx.fillRect(bx+10, boss.y+30, 20, 10); ctx.fillRect(bx+50, boss.y+30, 20, 10);
+            ctx.fillStyle = "#FF0"; ctx.fillRect(bx+15, boss.y+32, 5, 5); ctx.fillRect(bx+55, boss.y+32, 5, 5);
+        }
+    }
+
     enemies.forEach(e => {
         if(e.dead || e.x > camX+canvas.width) return;
         let ex = e.x - camX;
-        // 1. 飞行怪 (Flyer): 紫色蝙蝠状
-        if(e.type === 1) {
-            ctx.fillStyle = "#7E57C2"; // Purple
-            ctx.beginPath(); ctx.moveTo(ex, e.y); ctx.lineTo(ex+e.w/2, e.y+e.h); ctx.lineTo(ex+e.w, e.y); ctx.fill();
-            ctx.fillStyle = "#fff"; ctx.fillRect(ex+10, e.y+5, 5, 5); ctx.fillRect(ex+25, e.y+5, 5, 5); // Eyes
-        }
-        // 2. 食人花 (Plant): 绿色+红嘴
-        else if(e.type === 2) {
-            ctx.fillStyle = "#2E7D32"; // Green stem
-            ctx.fillRect(ex+10, e.y+20, 20, 20);
-            ctx.fillStyle = "#D32F2F"; // Red head
-            ctx.beginPath(); ctx.arc(ex+20, e.y+10, 15, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = "#FFF"; // Teeth
-            if(Math.floor(frames/10)%2===0) ctx.fillRect(ex+15, e.y+5, 10, 5);
-        }
-        // 3. 跳跃怪 (Jumper): 青色青蛙状
-        else if(e.type === 3) {
-            ctx.fillStyle = "#00BFA5"; 
-            ctx.fillRect(ex, e.y+10, e.w, e.h-10);
-            ctx.fillStyle = "#000"; ctx.fillRect(ex+5, e.y+5, 5, 5); ctx.fillRect(ex+e.w-10, e.y+5, 5, 5);
-        }
-        // 0. 普通怪 (Walker): 红色
-        else {
-            ctx.fillStyle = "#E53935"; ctx.fillRect(ex, e.y+5, e.w, e.h-5);
-            ctx.fillStyle = "#FFCCBC"; ctx.fillRect(ex+5, e.y+15, e.w-10, 10);
-            ctx.fillStyle = "#000";
-            if(e.dx<0) { ctx.fillRect(ex+8,e.y+18,4,4); ctx.fillRect(ex+20,e.y+18,4,4); }
-            else { ctx.fillRect(ex+12,e.y+18,4,4); ctx.fillRect(ex+24,e.y+18,4,4); }
-        }
+        if(e.type === 1) { ctx.fillStyle = "#7E57C2"; ctx.beginPath(); ctx.moveTo(ex, e.y); ctx.lineTo(ex+e.w/2, e.y+e.h); ctx.lineTo(ex+e.w, e.y); ctx.fill(); }
+        else if(e.type === 2) { ctx.fillStyle = "#2E7D32"; ctx.fillRect(ex+10, e.y+20, 20, 20); ctx.fillStyle = "#D32F2F"; ctx.beginPath(); ctx.arc(ex+20, e.y+10, 15, 0, Math.PI*2); ctx.fill(); }
+        else if(e.type === 3) { ctx.fillStyle = "#00BFA5"; ctx.fillRect(ex, e.y+10, e.w, e.h-10); }
+        else { ctx.fillStyle = "#E53935"; ctx.fillRect(ex, e.y+5, e.w, e.h-5); ctx.fillStyle = "#FFCCBC"; ctx.fillRect(ex+5, e.y+15, e.w-10, 10); }
+    });
+    
+    particles.forEach((p, i) => {
+        p.x += p.dx; p.y += p.dy; p.life--;
+        ctx.fillStyle = p.c; ctx.fillRect(p.x-camX, p.y, 5, 5);
+        if(p.life<=0) particles.splice(i, 1);
     });
 
     if(!player.dead) {
-        let px = player.x-camX; let py = player.y;
-        if(player.kart) {
-            ctx.fillStyle=frames%4<2?"#2979FF":"#00E5FF"; ctx.fillRect(px,py+10,player.w,14);
-            ctx.fillStyle="#000"; ctx.fillRect(px+5,py+24,10,10); ctx.fillRect(px+30,py+24,10,10);
-        } else {
-            let hatC=player.big?"#C62828":"#D32F2F"; let suitC=player.big?"#1565C0":"#1976D2";
-            ctx.fillStyle=hatC; ctx.fillRect(px,py,player.w,player.h*0.3); ctx.fillRect(px-4,py+player.h*0.2,player.w+8,player.h*0.1);
-            ctx.fillStyle="#FFCCBC"; ctx.fillRect(px+4,py+player.h*0.3,player.w-8,player.h*0.3);
-            ctx.fillStyle=suitC; ctx.fillRect(px+4,py+player.h*0.6,player.w-8,player.h*0.35);
-            ctx.fillStyle="#3E2723"; ctx.fillRect(px+4,py+player.h*0.9,8,player.h*0.1); ctx.fillRect(px+player.w-12,py+player.h*0.9,8,player.h*0.1);
+        if(player.invul % 4 < 2) {
+            let px = player.x-camX; let py = player.y;
+            if(player.kart) {
+                ctx.fillStyle=frames%4<2?"#2979FF":"#00E5FF"; ctx.fillRect(px,py+10,player.w,14);
+                ctx.fillStyle="#000"; ctx.fillRect(px+5,py+24,10,10); ctx.fillRect(px+30,py+24,10,10);
+            } else {
+                let hatC=player.big?"#C62828":"#D32F2F"; let suitC=player.big?"#1565C0":"#1976D2";
+                ctx.fillStyle=hatC; ctx.fillRect(px,py,player.w,player.h*0.3); ctx.fillRect(px-4,py+player.h*0.2,player.w+8,player.h*0.1);
+                ctx.fillStyle="#FFCCBC"; ctx.fillRect(px+4,py+player.h*0.3,player.w-8,player.h*0.3);
+                ctx.fillStyle=suitC; ctx.fillRect(px+4,py+player.h*0.6,player.w-8,player.h*0.35);
+            }
         }
     }
 
@@ -478,11 +548,7 @@ function draw() {
 
 function checkOrient() { canvas.width=window.innerWidth; canvas.height=window.innerHeight; if(isMobile)document.getElementById('controls').style.display='block'; }
 window.addEventListener('resize', checkOrient); checkOrient();
-
-if(isMobile) {
-    const b=(id,k)=>{let el=document.getElementById(id); el.addEventListener('touchstart',e=>{e.preventDefault();input[k]=true;}); el.addEventListener('touchend',e=>{e.preventDefault();input[k]=false;});};
-    b('btn-L','l'); b('btn-R','r'); b('btn-J','j');
-}
+if(isMobile) { const b=(id,k)=>{let el=document.getElementById(id); el.addEventListener('touchstart',e=>{e.preventDefault();input[k]=true;}); el.addEventListener('touchend',e=>{e.preventDefault();input[k]=false;});}; b('btn-L','l'); b('btn-R','r'); b('btn-J','j'); }
 window.addEventListener('keydown',e=>{if(e.key==='a'||e.key==='ArrowLeft')input.l=true;if(e.key==='d'||e.key==='ArrowRight')input.r=true;if(e.key==='w'||e.key===' '||e.key==='ArrowUp')input.j=true;});
 window.addEventListener('keyup',e=>{if(e.key==='a'||e.key==='ArrowLeft')input.l=false;if(e.key==='d'||e.key==='ArrowRight')input.r=false;if(e.key==='w'||e.key===' '||e.key==='ArrowUp')input.j=false;});
 document.addEventListener('click', function() { if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); });
