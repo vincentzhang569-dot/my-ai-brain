@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V47.2 Physics Fix",
+    page_title="Super AI Kart: V47.3 Smart Fix",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -98,7 +98,7 @@ game_html = """
 
     <div id="menu">
         <h1 id="menu-title">SUPER AI KART</h1>
-        <p id="menu-sub">V47.2: PHYSICS FIX</p>
+        <p id="menu-sub">V47.3: AI FIX & BOUNDARY</p>
         <div class="btn-container">
             <button id="btn-retry" class="start-btn" onclick="retryLevel()" style="display:none; background: #4CAF50;">RETRY</button>
             <button id="btn-start" class="start-btn" onclick="resetGame()">PLAY</button>
@@ -394,8 +394,17 @@ function update() {
     if(!input.j) input.jLock = false;
 
     player.dy += PHYSICS.grav; player.x += player.dx; player.y += player.dy;
+    
+    // --- FIX 1: LEFT SCREEN BOUNDARY ---
+    // Prevent player from going behind the camera (causing sticky camera or lost vision)
+    if(player.x < camX) { player.x = camX; player.dx = 0; }
+    
     if(player.kart && player.y > canvas.height-100) { player.y = canvas.height-100; player.dy=0; player.ground=true; }
-    camX += (player.x - canvas.width*0.3 - camX) * 0.1; if(camX<0) camX=0;
+    
+    // Camera Logic
+    camX += (player.x - canvas.width*0.3 - camX) * 0.1; 
+    if(camX<0) camX=0;
+    
     if(player.y > canvas.height+100 && !player.kart && !player.inPipe) gameOver();
 
     player.ground = false;
@@ -579,57 +588,60 @@ function update() {
         if(e.dead) return;
         e.timer++;
 
-        // ENEMY LOGIC FIX (Physics & Collision)
         if(e.type === 0 || e.type === 3) { // Walker or Jumper
-             e.dy += 0.5; // Gravity
+             e.dy += 0.5; 
              e.y += e.dy;
              e.x += e.dx;
              e.ground = false;
 
-             // Collision with World
              blocks.forEach(b => {
                 if(colCheck(e, b)) {
-                    // Vertical
                     if(e.dy > 0 && e.y + e.h - e.dy <= b.y + 10) {
                         e.y = b.y - e.h; e.dy = 0; e.ground = true;
                     } 
-                    else if (e.dy < 0 && e.y - e.dy >= b.y + b.h - 10) { // Hit Head
+                    else if (e.dy < 0 && e.y - e.dy >= b.y + b.h - 10) { 
                          e.y = b.y + b.h; e.dy = 0;
                     }
-                    // Horizontal (Turn Around)
                     else {
                         e.dx *= -1; 
-                        e.x += e.dx; // Push back
+                        e.x += e.dx; 
                     }
                 }
              });
              
-             // Jumper jump logic
+             // --- FIX 2: SMART CLIFF DETECTION ---
+             // If enemy is on ground, check if there is ground ahead. If not, turn back.
+             if(e.ground && e.type === 0) {
+                 let lookAhead = (e.dx > 0) ? (e.w/2 + 5) : (-e.w/2 - 5);
+                 let cx = e.x + e.w/2 + lookAhead;
+                 let cy = e.y + e.h + 5;
+                 
+                 let hasGround = false;
+                 // Use a simple check against blocks
+                 for(let bi=0; bi<blocks.length; bi++) {
+                     let b = blocks[bi];
+                     // Check point (cx, cy) vs block rect
+                     if(cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+                         hasGround = true; break;
+                     }
+                 }
+                 
+                 if(!hasGround) {
+                     e.dx *= -1; // Turn around
+                     e.x += e.dx * 2; // Bump back a bit
+                 }
+             }
+             
              if(e.type === 3 && e.ground && Math.random() < 0.02) {
                  e.dy = -10; e.dx = (player.x < e.x) ? -2 : 2;
              }
              
-             // Smart Cliff Detection (Prevent walking on air)
-             if(e.type === 0 && e.ground) {
-                 let lookX = e.x + e.w/2 + (e.dx > 0 ? e.w : -e.w);
-                 let foundGround = false;
-                 blocks.forEach(b => {
-                     if(lookX >= b.x && lookX <= b.x + b.w && e.y + e.h + 2 >= b.y && e.y + e.h - 5 <= b.y + b.h) {
-                         foundGround = true;
-                     }
-                 });
-                 if(!foundGround) {
-                     e.dx *= -1; // Turn around if pit detected
-                     e.x += e.dx * 2;
-                 }
-             }
-             
-             if(e.y > canvas.height + 100) e.dead = true; // Fall cleanup
+             if(e.y > canvas.height + 100) e.dead = true; 
         } 
-        else if(e.type === 1) { // Flyer (Unchanged)
+        else if(e.type === 1) { 
              e.x += e.dx; e.y = e.anchorY + Math.sin(frames * 0.1) * 60; 
         }
-        else if(e.type === 2) { // Drill (Unchanged)
+        else if(e.type === 2) { 
              let cycle = e.timer % 180; 
              if(cycle < 90 && e.y > e.anchorY - e.h) e.y -= 2; 
              if(cycle >= 90 && e.y < e.anchorY) e.y += 2; 
