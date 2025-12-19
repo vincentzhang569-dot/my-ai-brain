@@ -5,25 +5,25 @@ import os
 import glob
 import json
 
-# --- 1. 页面配置 ---
+# --- 1. 页面配置 (移除所有多余边距) ---
 st.set_page_config(
-    page_title="Super AI Kart: Restoration",
+    page_title="Super AI Kart: V21 Mobile",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# 隐藏多余UI，争取最大屏幕空间
+# 暴力清除 Streamlit 默认的 Padding，确保真全屏
 st.markdown("""
     <style>
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        header {visibility: hidden;}
-        .block-container {padding-top: 0rem; padding-bottom: 0rem; padding-left: 0rem; padding-right: 0rem;}
+        #MainMenu, footer, header {visibility: hidden;}
+        .block-container {padding: 0 !important; margin: 0 !important; overflow: hidden;}
+        body { margin: 0; padding: 0; overflow: hidden; background: black;}
+        iframe { display: block; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 音频数据 (保持兼容) ---
+# --- 2. 音频数据读取 (保持不变) ---
 def get_audio_data(folder_path="mp3"):
     playlist = []
     game_over_data = ""
@@ -41,7 +41,7 @@ def get_audio_data(folder_path="mp3"):
 
 playlist_json, game_over_b64 = get_audio_data("mp3")
 
-# --- 3. 游戏核心 (V18内容 + V19音乐 + V20横屏) ---
+# --- 3. 游戏核心 HTML ---
 game_template = """
 <!DOCTYPE html>
 <html>
@@ -49,527 +49,426 @@ game_template = """
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
-    
-    body {
-        margin: 0; background-color: #000; color: white;
-        font-family: 'VT323', monospace;
-        overflow: hidden; height: 100vh; width: 100vw;
-        display: flex; align-items: center; justify-content: center;
-        touch-action: none; -webkit-touch-callout: none; user-select: none;
+    /* 全局复位 */
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body, html {
+        margin: 0; padding: 0; width: 100%; height: 100%;
+        background-color: #000; overflow: hidden;
+        font-family: 'Courier New', monospace; /* 使用通用字体防止加载失败 */
+        touch-action: none; user-select: none; -webkit-user-select: none;
     }
 
-    /* 游戏容器 */
-    #game-container {
+    /* 游戏容器：核心层 */
+    #app-root {
         position: relative;
-        width: 100%; height: 100%;
-        display: flex; justify-content: center; align-items: center;
+        width: 100vw; height: 100vh;
+        background: #333;
+        overflow: hidden;
     }
 
-    #game-wrapper {
-        position: relative;
-        width: 100%; height: 100%;
-        background-color: #333; overflow: hidden;
-        transition: all 0.5s ease; /* 旋转动画 */
-    }
-
-    /* 🔄 强制横屏模式 CSS */
-    .force-landscape {
-        width: 100vh !important;
-        height: 100vw !important;
-        transform: rotate(90deg);
-        /* 旋转中心点需要微调，确保居中 */
+    /* 🎮 强制横屏的核心黑科技 */
+    /* 当激活 .landscape 类时，强制旋转容器 */
+    #app-root.landscape {
+        width: 100vh; /* 宽变成了高 */
+        height: 100vw; /* 高变成了宽 */
+        transform-origin: top left;
+        transform: rotate(90deg) translateY(-100%);
         position: absolute;
-        top: 50%; left: 50%;
-        margin-left: -50vh; /* height的一半 */
-        margin-top: -50vw;  /* width的一半 */
+        top: 0; left: 0;
     }
 
     canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
 
-    .ui-text { position: absolute; color: white; text-shadow: 2px 2px #000; z-index: 10; pointer-events: none; font-size: clamp(20px, 5vw, 32px); font-weight: bold; }
-    #score-board { top: 10px; left: 10px; } 
-    #coin-board { top: 10px; left: 50%; transform: translateX(-50%); color: #FFD700; } 
-    #level-board { top: 10px; right: 10px; color: #00FF00; }
-
-    #rotate-btn {
-        position: absolute; top: 50px; left: 10px; z-index: 50;
-        background: rgba(0,0,0,0.5); color: white; border: 1px solid white;
-        padding: 5px 10px; font-family: 'VT323'; cursor: pointer; font-size: 16px;
-        pointer-events: auto;
-    }
-
-    #overlay {
+    /* UI 层 */
+    .ui-layer {
         position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0,0,0,0.85);
-        display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 20;
+        pointer-events: none; /* 让点击穿透到 Canvas 或 按钮 */
+        z-index: 10;
     }
-    h1 { font-size: clamp(40px, 10vw, 90px); margin: 0; color: #FF4500; text-shadow: 4px 4px #000; letter-spacing: 5px; text-align: center; }
-    
-    .btn-container { display: flex; gap: 20px; margin-top: 20px; }
-    button.pixel-btn {
-        background: #00AA00; border: 4px solid #fff; color: white;
-        font-family: 'VT323'; font-size: clamp(20px, 6vw, 36px);
-        padding: 10px 30px; cursor: pointer; box-shadow: 0 6px 0 #005500; text-transform: uppercase;
-    }
-    button.pixel-btn:active { transform: translateY(6px); box-shadow: none; }
-    button.red-btn { background: #CC0000; box-shadow: 0 6px 0 #660000; }
-    button.blue-btn { background: #0066CC; box-shadow: 0 6px 0 #003366; }
 
+    /* 文字显示 */
+    .hud-text {
+        position: absolute; color: white; font-weight: bold; font-size: 20px;
+        text-shadow: 2px 2px 0 #000; top: 10px;
+    }
+    #score-box { left: 15px; }
+    #coin-box { left: 50%; transform: translateX(-50%); color: #FFD700; }
+    #world-box { right: 15px; color: #7FFF00; }
+
+    /* 🔄 横屏切换按钮 (做小一点，放在左上角) */
+    #rotate-btn {
+        position: absolute; top: 50px; left: 15px; pointer-events: auto;
+        background: rgba(0,0,0,0.6); color: white; border: 1px solid #fff;
+        padding: 5px 10px; font-size: 14px; border-radius: 4px; z-index: 999;
+    }
+
+    /* 📱 移动端控制器 (针对性优化：分离、半透明、适中大小) */
     #controls {
-        position: absolute; bottom: 20px; width: 100%; height: 120px;
-        display: flex; justify-content: space-between; padding: 0 40px; box-sizing: border-box;
-        z-index: 30; pointer-events: none;
+        position: absolute; bottom: 0; left: 0; width: 100%; height: 100%;
+        pointer-events: none; z-index: 20;
+        display: none; /* 默认隐藏，JS判断是手机才显示 */
     }
-    .ctrl-group { display: flex; gap: 20px; pointer-events: auto; align-items: center; }
-    .ctrl-btn {
-        width: 80px; height: 80px;
-        background: rgba(255, 255, 255, 0.15); border: 2px solid rgba(255, 255, 255, 0.4);
-        border-radius: 12px; display: flex; align-items: center; justify-content: center;
-        font-size: 30px; color: white; backdrop-filter: blur(4px); touch-action: none;
+    
+    .touch-zone {
+        position: absolute; bottom: 20px;
+        display: flex; gap: 15px; pointer-events: auto;
     }
-    .ctrl-btn:active, .ctrl-btn.active { background: rgba(255, 255, 255, 0.4); transform: scale(0.95); }
-    .btn-a { border-radius: 50%; width: 90px; height: 90px; background: rgba(255, 69, 0, 0.3); }
-    .btn-a:active, .btn-a.active { background: rgba(255, 69, 0, 0.6); }
 
-    @media (min-width: 1024px) { #controls, #rotate-btn { display: none; } }
+    /* 左手：左右移动 */
+    #d-pad { left: 25px; }
+    /* 右手：跳跃 */
+    #action-pad { right: 25px; }
+
+    .btn {
+        width: 65px; height: 65px; /* 尺寸缩小到 65px */
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.15); /* 很淡的背景 */
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        display: flex; align-items: center; justify-content: center;
+        color: white; font-size: 24px; font-weight: bold;
+        backdrop-filter: blur(2px);
+    }
+    .btn:active, .btn.active { background: rgba(255, 255, 255, 0.4); transform: scale(0.95); }
+    
+    /* 遮罩层 */
+    #overlay {
+        position: absolute; top:0; left:0; width:100%; height:100%;
+        background: rgba(0,0,0,0.85); z-index: 50;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    h1 { font-size: 40px; color: #FF4500; margin-bottom: 10px; text-align: center; text-shadow: 4px 4px #000;}
+    .menu-btn {
+        background: #00AA00; color: white; border: 3px solid white;
+        padding: 10px 30px; font-size: 24px; margin-top: 20px; cursor: pointer;
+        font-family: monospace; text-transform: uppercase;
+    }
+
+    /* 仅在移动设备显示控制器 */
+    @media (hover: none) and (pointer: coarse) {
+        #controls { display: block; }
+    }
 </style>
 </head>
 <body>
 
-<div id="game-container">
-    <div id="game-wrapper">
-        <div id="rotate-btn" onclick="toggleLandscape()">🔄 强制横屏</div>
-        
-        <div id="score-board" class="ui-text">SCORE: <span id="score-val">0</span></div>
-        <div id="coin-board" class="ui-text">💰 <span id="coin-val">0</span></div>
-        <div id="level-board" class="ui-text">WORLD <span id="level-val">1-1</span></div>
-        
-        <div id="overlay">
-            <h1 id="title-text">SUPER AI<br>KART</h1>
-            <p id="sub-text" style="color:#aaa;font-size:18px;margin-top:10px;">Music by AI 🎵</p>
-            <div id="start-btn-group" class="btn-container"><button class="pixel-btn" onclick="tryStartGame()">START</button></div>
-            <div id="retry-btn-group" class="btn-container" style="display:none;">
-                <button class="pixel-btn blue-btn" onclick="retryLevel()">Retry</button>
-                <button class="pixel-btn red-btn" onclick="tryStartGame()">Reset</button>
-            </div>
+<div id="app-root">
+    <canvas id="gameCanvas"></canvas>
+    
+    <div class="ui-layer">
+        <div id="rotate-btn" onclick="toggleLandscape()">📱 旋转/横屏</div>
+        <div id="score-box" class="hud-text">SCORE: <span id="s-val">0</span></div>
+        <div id="coin-box" class="hud-text">💰 <span id="c-val">0</span></div>
+        <div id="world-box" class="hud-text">1-<span id="l-val">1</span></div>
+    </div>
+
+    <div id="controls">
+        <div id="d-pad" class="touch-zone">
+            <div class="btn" id="btn-left">◀</div>
+            <div class="btn" id="btn-right">▶</div>
         </div>
-        
-        <canvas id="gameCanvas"></canvas>
-        
-        <div id="controls">
-            <div class="ctrl-group">
-                <div class="ctrl-btn" id="btn-left">◀</div>
-                <div class="ctrl-btn" id="btn-right">▶</div>
-            </div>
-            <div class="ctrl-group">
-                <div class="ctrl-btn btn-a" id="btn-jump">A</div>
-            </div>
+        <div id="action-pad" class="touch-zone">
+            <div class="btn" id="btn-jump">J</div>
         </div>
+    </div>
+
+    <div id="overlay">
+        <h1>SUPER AI KART<br><span style="font-size:20px;color:#ccc">Mobile Remaster</span></h1>
+        <button class="menu-btn" onclick="startGame()">START GAME</button>
+        <p style="color:#666; font-size:12px; margin-top:20px">Auto-Landscape Enabled</p>
     </div>
 </div>
 
 <script>
+// --- 初始化 ---
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const wrapper = document.getElementById('game-wrapper');
+const root = document.getElementById('app-root');
 
-// --- 🔄 横屏切换逻辑 ---
-let isLandscape = false;
+// --- 📱 核心：真·横屏适配 ---
+let isLandscapeMode = false;
+
 function toggleLandscape() {
-    isLandscape = !isLandscape;
-    if (isLandscape) {
-        wrapper.classList.add('force-landscape');
+    isLandscapeMode = !isLandscapeMode;
+    if (isLandscapeMode) {
+        root.classList.add('landscape');
     } else {
-        wrapper.classList.remove('force-landscape');
+        root.classList.remove('landscape');
     }
-    // 延迟一点等待CSS动画，然后重绘
-    setTimeout(resizeCanvas, 600);
+    // 强制延迟重置画布尺寸，因为 DOM 旋转需要时间
+    setTimeout(resizeCanvas, 100); 
+    setTimeout(resizeCanvas, 500); 
 }
 
 function resizeCanvas() {
-    // 无论是否旋转，都获取wrapper当前显示的像素尺寸
-    const rect = wrapper.getBoundingClientRect();
-    // 当 transform 生效时，rect 可能会很奇怪，直接取 offsetWidth/Height
-    // 如果旋转了，width 和 height 在视觉上是反的，但 canvas 内部坐标系跟随 DOM 元素
-    if (isLandscape) {
-        // 强制设置分辨率匹配
-        canvas.width = wrapper.offsetHeight; 
-        canvas.height = wrapper.offsetWidth;
-    } else {
-        canvas.width = wrapper.clientWidth;
-        canvas.height = wrapper.clientHeight;
-    }
+    // 获取容器现在的逻辑宽高
+    const w = root.clientWidth;
+    const h = root.clientHeight;
+    
+    // 无论是否旋转，Canvas 都要填满它的容器
+    canvas.width = w;
+    canvas.height = h;
+    
+    // 如果是横屏模式，摄像机要适应宽屏
     if(!player.dead) drawGame();
 }
 window.addEventListener('resize', resizeCanvas);
-setTimeout(resizeCanvas, 100);
 
-// --- 🎵 AI 音乐 (V19 逻辑) ---
-const MUSIC_THEMES = [
-    { type: 'grass', bass: 'square', lead: 'triangle', scale: [261.6, 293.6, 329.6, 392.0, 440.0, 523.2], bpm: 150 },
-    { type: 'dark', bass: 'sawtooth', lead: 'square', scale: [130.8, 146.8, 155.5, 196.0, 207.6, 261.6], bpm: 120 },
-    { type: 'sky', bass: 'sine', lead: 'sawtooth', scale: [349.2, 440.0, 523.2, 587.3, 659.2, 698.4], bpm: 180 }
-];
-let audioCtx = null, musicInterval = null;
+// --- 音频系统 (简化版防止报错) ---
+const playlist = __PLAYLIST_DATA__;
+let audioCtx = null;
+let musicInterval = null;
 
-function startProceduralBGM(levelIndex) {
-    if(musicInterval) clearInterval(musicInterval);
-    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const theme = MUSIC_THEMES[(levelIndex - 1) % MUSIC_THEMES.length];
-    const beatTime = 60 / theme.bpm; 
-    let tick = 0;
-
-    musicInterval = setInterval(() => {
-        if(audioCtx.state === 'suspended') audioCtx.resume();
-        const t = audioCtx.currentTime;
-        if (tick % 2 === 0) {
-            const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
-            osc.type = theme.bass;
-            const bassNote = (Math.random() > 0.5 ? theme.scale[0] : theme.scale[3]) / 2; 
-            osc.frequency.setValueAtTime(bassNote, t);
-            g.gain.setValueAtTime(0.1, t); g.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
-            osc.connect(g); g.connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.3);
-        }
-        if (Math.random() > 0.2) {
-            const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
-            osc.type = theme.lead;
-            let noteFreq = theme.scale[Math.floor(Math.random() * theme.scale.length)];
-            if (Math.random() > 0.8) noteFreq *= 2;
-            osc.frequency.setValueAtTime(noteFreq, t);
-            g.gain.setValueAtTime(0.05, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-            osc.connect(g); g.connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.2);
-        }
-        tick++;
-    }, beatTime * 1000);
-}
-function stopMusic() { if (musicInterval) { clearInterval(musicInterval); musicInterval = null; } }
-function playMusic(type, level) {
-    if (type === 'gameover') {
-        stopMusic();
-        if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const t = audioCtx.currentTime;
-        const o=audioCtx.createOscillator(); const g=audioCtx.createGain();
-        o.type='sawtooth'; o.frequency.setValueAtTime(100, t); o.frequency.linearRampToValueAtTime(30, t+1);
-        g.gain.setValueAtTime(0.2, t); g.gain.linearRampToValueAtTime(0, t+1);
-        o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+1);
-    } else { startProceduralBGM(level); }
-}
 function playSound(type) {
-    if(!audioCtx) return;
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    
     const t = audioCtx.currentTime;
-    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
-    o.connect(g); g.connect(audioCtx.destination);
-    if (type === 'jump') { o.type='square'; o.frequency.setValueAtTime(150+(player.jumpCount*100), t); o.frequency.linearRampToValueAtTime(300, t+0.1); g.gain.setValueAtTime(0.1, t); g.gain.linearRampToValueAtTime(0, t+0.1); }
-    else if (type === 'coin') { o.type='sine'; o.frequency.setValueAtTime(1200, t); o.frequency.linearRampToValueAtTime(1600, t+0.1); g.gain.setValueAtTime(0.1, t); g.gain.linearRampToValueAtTime(0, t+0.2); }
-    else if (type === 'powerup') { o.type='triangle'; o.frequency.setValueAtTime(300, t); o.frequency.linearRampToValueAtTime(600, t+0.3); g.gain.setValueAtTime(0.2, t); g.gain.linearRampToValueAtTime(0, t+0.3); }
-    else if (type === 'stomp') { o.type='noise'; o.frequency.setValueAtTime(100,t); o.frequency.linearRampToValueAtTime(0,t+0.1); g.gain.setValueAtTime(0.1,t); g.gain.linearRampToValueAtTime(0,t+0.1); }
-    o.start(t); o.stop(t+0.3);
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+
+    if(type === 'jump') {
+        osc.frequency.setValueAtTime(200, t); osc.frequency.linearRampToValueAtTime(400, t+0.1);
+        gain.gain.setValueAtTime(0.1, t); gain.gain.linearRampToValueAtTime(0, t+0.1);
+        osc.start(t); osc.stop(t+0.1);
+    } else if (type === 'coin') {
+        osc.frequency.setValueAtTime(1000, t); osc.frequency.setValueAtTime(1500, t+0.1);
+        gain.gain.setValueAtTime(0.1, t); gain.gain.linearRampToValueAtTime(0, t+0.2);
+        osc.start(t); osc.stop(t+0.2);
+    } else if (type === 'bgm') {
+        // 极简 BGM 循环
+        const base = 220; 
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(base, t);
+        gain.gain.setValueAtTime(0.05, t); gain.gain.linearRampToValueAtTime(0, t+0.5);
+        osc.start(t); osc.stop(t+0.5);
+    }
 }
 
-// --- 🎮 游戏核心 (V18 内容回归) ---
-const BIOMES={grass:{bg:'#5c94fc',ground:'#51D96C',monsters:['walker','slime','rabbit']}, dark:{bg:'#222',ground:'#555',monsters:['walker','bat','spiky']}, sky:{bg:'#87CEEB',ground:'#FFF',monsters:['bird','bat']}};
-let state={level:1,score:0,coins:0}, frames=0, blocks=[], enemies=[], items=[], clouds=[], camX=0, finishLine=0, loopId=null;
-let input={left:false,right:false,jump:false};
-let player={x:100,y:200,w:40,h:56,dx:0,dy:0,grounded:false,jumpCount:0,dead:false,facingRight:true,enteringPipe:false, isBig:false, inKart:false, immune:0};
+// 简单的节奏器
+function startMusic() {
+    if(musicInterval) clearInterval(musicInterval);
+    musicInterval = setInterval(() => {
+        if(Math.random() > 0.5) playSound('bgm');
+    }, 400);
+}
 
-// V19 移动端手感参数
-const IS_MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-const MAX_SPEED = IS_MOBILE ? 7 : 9; 
-const ACCEL = IS_MOBILE ? 0.9 : 1.5; 
-const FRICTION = 0.85;
+// --- 游戏逻辑 ---
+// 🔧 物理参数调优 (手感核心)
+const IS_MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent);
+const PHYS = {
+    maxSpeed: IS_MOBILE ? 5.5 : 8.0, // 移动端降速，防跑过头
+    accel: 0.6,    // 加速度减小，更线性
+    friction: 0.82, // 摩擦力增大，松手即停
+    jumpForce: -14
+};
 
-function createLevel(lvl) {
-    blocks=[]; enemies=[]; items=[]; clouds=[]; player.enteringPipe=false;
-    // 重置玩家状态，但不重置分数
-    if(player.dead) { player.isBig=false; player.inKart=false; player.w=40; player.h=56; }
+let state = { score:0, coins:0, level:1 };
+let player = { x:100, y:100, w:40, h:56, dx:0, dy:0, grounded:false, dead:false, jumpCount:0 };
+let input = { left:false, right:false, jump:false };
+let entities = []; // 所有的砖块、敌人都在这里
+let camX = 0;
+let loopId = null;
 
-    const types=['grass','dark','sky']; const b=BIOMES[types[(lvl-1)%3]];
-    wrapper.style.backgroundColor=b.bg; document.getElementById('level-val').innerText="1-"+lvl;
+function initLevel(lvl) {
+    entities = [];
+    const gy = canvas.height - 80;
     
-    for(let i=0; i<10; i++) clouds.push({x: Math.random()*2000, y: Math.random()*200, w: 60+Math.random()*40, s: 0.2+Math.random()*0.3});
-
-    const gy=canvas.height-100; let x=0; finishLine=(70+lvl*30)*50;
-    
-    for(let i=0;i<15;i++){blocks.push({x:x,y:gy,w:50,h:50,type:'ground',c:b.ground});x+=50;}
-    
-    // --- 恢复 V18 的复杂地图生成逻辑 ---
-    while(x<finishLine){
-        if(Math.random() < 0.15 && lvl > 0){ 
-            x += 80 + Math.random()*40; // 坑
-        } 
-        else {
-            let len = 2 + Math.floor(Math.random()*4);
-            for(let k=0; k<len; k++){
-                blocks.push({x:x,y:gy,w:50,h:50,type:'ground',c:b.ground});
-                if(Math.random()<0.3){ 
-                    let mType = b.monsters[Math.floor(Math.random()*b.monsters.length)];
-                    let my = gy-40; let mg = 0.7;
-                    if(mType==='bat'||mType==='bird'){my-=150; mg=0;}
-                    enemies.push({x:x,y:my,w:40,h:40,dx:-2,dy:0,g:mg,startX:x,startY:my,type:mType,dead:false}); 
-                }
-                x+=50;
-            }
-            // 平台与箱子
-            if(Math.random() < 0.6) {
-                let platformH = gy - 130; 
-                let pX = x - (len*50) + 20; 
-                for(let p=0; p<3; p++) {
-                    if (Math.random() > 0.5) { 
-                        let isBox = Math.random() < 0.3;
-                        let type = isBox ? 'box' : 'brick';
-                        let color = isBox ? '#FFD700' : '#8B4513';
-                        let loot = 'coin';
-                        if(isBox) {
-                             if(Math.random()<0.3) loot = 'mushroom'; 
-                             if(Math.random()<0.05) loot = 'kart';
-                        }
-                        blocks.push({x: pX + p*50, y: platformH, w: 50, h: 50, type: type, c: color, loot: loot, active: true});
-                    }
-                }
+    // 地面
+    for(let i=0; i<200; i++) {
+        // 留坑
+        if(i > 10 && i < 150 && Math.random() < 0.1) continue;
+        
+        entities.push({type:'ground', x:i*50, y:gy, w:50, h:80, c:'#66BB6A'});
+        
+        // 随机生成平台和怪物
+        if(i > 10 && Math.random() < 0.3) {
+            // 砖块
+            entities.push({type:'brick', x:i*50, y:gy-120, w:50, h:50, c:'#8D6E63'});
+            // 怪物
+            if(Math.random() < 0.4) {
+                 entities.push({type:'enemy', x:i*50, y:gy-40, w:40, h:40, dx:-2, dy:0, c:'#D32F2F', dead:false});
             }
         }
     }
-    for(let i=0;i<10;i++){blocks.push({x:x,y:gy,w:50,h:50,type:'ground',c:b.ground});x+=50;}
-    blocks.push({x:finishLine+200,y:gy-50,w:60,h:50,type:'pipe',c:'#00DD00'});
-    blocks.push({x:finishLine+200,y:gy-100,w:60,h:50,type:'pipe_top',c:'#00DD00'});
+    // 终点
+    entities.push({type:'pipe', x:200*50, y:gy-60, w:60, h:140, c:'#388E3C'});
     
-    player.x=100; player.y=gy-200; player.dx=0; player.dy=0; player.dead=false; player.jumpCount=0; camX=0;
+    player.x = 100; player.y = gy-200; player.dx = 0; player.dy = 0;
+    camX = 0;
 }
 
-// --- 恢复 V18 的绘制函数 ---
-function drawPlayer(x,y,w,h,dir){
-    if(player.enteringPipe) ctx.globalAlpha = 0.7;
-    if(player.immune > 0 && Math.floor(frames/5)%2===0) ctx.globalAlpha = 0.5;
-
-    if (player.inKart) {
-        ctx.fillStyle = "#FF0000"; ctx.fillRect(x-5, y+h-20, w+10, 20);
-        ctx.fillStyle = "black"; ctx.fillRect(x-2, y+h-5, 10, 10); ctx.fillRect(x+w-8, y+h-5, 10, 10);
-        ctx.fillStyle = "#FFCC99"; ctx.fillRect(x+10, y+h-30, 20, 15); // 头
-    } else {
-        // 小人绘制
-        ctx.fillStyle="#EE0000";ctx.fillRect(x,y,w,h*0.25); // 帽
-        ctx.fillRect(dir?x+5:x-5,y+h*0.2,w,h*0.1); 
-        ctx.fillStyle="#FFCC99";ctx.fillRect(x+4,y+h*0.25,w-8,h*0.25); // 脸
-        ctx.fillStyle="#EE0000";ctx.fillRect(x+4,y+h*0.5,w-8,h*0.25); // 衣
-        ctx.fillStyle="#0000CC";ctx.fillRect(x+4,y+h*0.75,w-8,h*0.20); // 裤
-        ctx.fillStyle="#5c3317";
-        let legOffset = (Math.abs(player.dx)>0.1 && player.grounded) ? Math.sin(frames*0.5)*5 : 0;
-        ctx.fillRect(x+4+legOffset,y+h-5,10,5); ctx.fillRect(x+w-14-legOffset,y+h-5,10,5);
-    }
-    ctx.globalAlpha = 1.0;
-}
-
-function drawEnemy(e) {
-    let x=e.x-camX, y=e.y, w=e.w, h=e.h, dir=e.dx>0;
-    if (y === undefined || isNaN(y)) return; 
-    if (e.type === 'walker') {
-        ctx.fillStyle = '#8B0000'; ctx.fillRect(x,y+h/2,w,h/2);
-        ctx.fillStyle = '#D2691E'; ctx.fillRect(x-2,y,w+4,h/2+2);
-        ctx.fillStyle='white'; ctx.fillRect(dir?x+w-10:x+2,y+5,8,8);
-    } else if (e.type === 'slime') {
-        ctx.fillStyle = '#32CD32'; ctx.beginPath(); ctx.moveTo(x,y+h); ctx.quadraticCurveTo(x+w/2,y-10,x+w,y+h); ctx.fill();
-        ctx.fillStyle='black'; ctx.fillRect(dir?x+w-15:x+5,y+h-15,5,5);
-    } else if (e.type === 'bat') {
-        ctx.fillStyle = '#4B0082'; ctx.fillRect(x+10,y+10,w-20,h-20);
-        ctx.beginPath(); ctx.moveTo(x,y+10); ctx.lineTo(x-15,y-5); ctx.lineTo(x+10,y+15); ctx.fill(); // 翅膀
-        ctx.beginPath(); ctx.moveTo(x+w,y+10); ctx.lineTo(x+w+15,y-5); ctx.lineTo(x+w-10,y+15); ctx.fill();
-    } else if (e.type === 'spiky') {
-        ctx.fillStyle = '#006400'; ctx.fillRect(x,y+h-15,w,15);
-        ctx.beginPath(); ctx.moveTo(x,y+h-15); ctx.lineTo(x+w/2,y); ctx.lineTo(x+w,y+h-15); ctx.fill();
-    } else if (e.type === 'bird') {
-        ctx.fillStyle = '#FFD700'; ctx.beginPath(); ctx.arc(x+w/2,y+h/2,w/2,0,6.28); ctx.fill();
-        ctx.fillStyle='white'; ctx.fillRect(dir?x+w-15:x+5,y+10,8,8);
-    }
-}
-
-function drawItem(i) {
-    let x = i.x - camX, y = i.y;
-    if (i.type === 'coin') {
-        ctx.fillStyle = '#FFD700'; ctx.beginPath(); ctx.arc(x+15, y+15, 12, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#FFEE00'; ctx.font="20px monospace"; ctx.fillText("$", x+10, y+22);
-    } else if (i.type === 'mushroom') {
-        ctx.fillStyle = 'red'; ctx.beginPath(); ctx.arc(x+20, y+20, 18, 0, Math.PI, true); ctx.fill();
-        ctx.fillStyle = 'white'; ctx.fillRect(x+10, y+20, 20, 15);
-    } else if (i.type === 'kart') {
-        ctx.fillStyle = 'white'; ctx.fillRect(x+5,y+5,30,20);
-        ctx.fillStyle = 'red'; ctx.fillRect(x+5,y+5,15,10); ctx.fillRect(x+20,y+15,15,10);
-    }
-}
-
-// --- 核心更新循环 (V18逻辑 + V19物理) ---
 function update() {
-    if(player.dead) return; 
-    frames++; ctx.clearRect(0,0,canvas.width,canvas.height);
+    if(player.dead) return;
+    
+    // 1. 物理计算
+    if (input.right) player.dx += PHYS.accel;
+    else if (input.left) player.dx -= PHYS.accel;
+    else player.dx *= PHYS.friction;
 
-    // 云朵背景
-    ctx.fillStyle = "rgba(255,255,255,0.4)";
-    clouds.forEach(c => {
-        c.x -= c.s; if(c.x < -100) c.x = canvas.width + Math.random()*500;
-        ctx.beginPath(); ctx.arc(c.x, c.y, c.w, 0, Math.PI*2); ctx.fill();
+    // 速度限制
+    if (player.dx > PHYS.maxSpeed) player.dx = PHYS.maxSpeed;
+    if (player.dx < -PHYS.maxSpeed) player.dx = -PHYS.maxSpeed;
+    if (Math.abs(player.dx) < 0.1) player.dx = 0;
+
+    // 跳跃
+    if (input.jump) {
+        if (player.grounded) {
+             player.dy = PHYS.jumpForce; player.grounded = false; player.jumpCount = 1; playSound('jump');
+        } else if (player.jumpCount < 2) { // 二段跳即可，不用三段，太乱
+             player.dy = PHYS.jumpForce * 0.8; player.jumpCount++; playSound('jump');
+        }
+        input.jump = false; // 消耗按键
+    }
+
+    player.dy += 0.8; // 重力
+    player.x += player.dx;
+    player.y += player.dy;
+    
+    // 掉落死亡
+    if(player.y > canvas.height + 200) gameOver();
+
+    // 2. 摄像机
+    let targetCamX = player.x - canvas.width * 0.3;
+    if(targetCamX < 0) targetCamX = 0;
+    camX += (targetCamX - camX) * 0.15; // 平滑跟随
+
+    // 3. 碰撞检测
+    player.grounded = false;
+    entities.forEach(e => {
+        let ex = e.x - camX; // 渲染坐标
+        
+        // 玩家碰撞检测 (使用绝对坐标)
+        if (rectIntersect(player, e)) {
+            if (e.type === 'enemy' && !e.dead) {
+                // 踩头判定
+                if (player.dy > 0 && player.y + player.h < e.y + e.h * 0.5) {
+                    e.dead = true; player.dy = -8; state.score += 100; playSound('coin');
+                } else {
+                    gameOver();
+                }
+            } else if (e.type === 'ground' || e.type === 'brick' || e.type === 'pipe') {
+                // 简单的AABB解决
+                // 落地
+                if (player.dy > 0 && player.y + player.h - player.dy <= e.y + 10) {
+                     player.y = e.y - player.h; player.dy = 0; player.grounded = true; player.jumpCount = 0;
+                }
+                // 顶头
+                else if (player.dy < 0 && player.y - player.dy >= e.y + e.h - 10) {
+                    player.y = e.y + e.h; player.dy = 0;
+                }
+                // 侧面撞
+                else if (player.dx > 0) { player.x = e.x - player.w; player.dx = 0; }
+                else if (player.dx < 0) { player.x = e.x + e.w; player.dx = 0; }
+            }
+        }
+        
+        // 敌人移动逻辑
+        if(e.type === 'enemy' && !e.dead) {
+            e.x += e.dx;
+            if(Math.abs(e.x - player.x) > 1000) return; // 太远不计算
+            // 简单的来回巡逻
+            // 这里省略复杂的敌人碰撞地形，简化为悬空巡逻或地面巡逻
+        }
     });
 
-    if (player.enteringPipe) {
-        player.dy = 2; player.y += player.dy;
-        if(player.y > canvas.height) { state.level++; retryLevel(); return; }
-        // 绘制场景
-        drawItemsAndEnemies(); drawBlocks(); drawPlayer(player.x - camX, player.y, player.w, player.h, player.facingRight);
-        loopId = requestAnimationFrame(update); return;
-    }
+    drawGame();
+    loopId = requestAnimationFrame(update);
+}
 
-    // 物理移动 (V19 优化手感)
-    let maxS = player.inKart ? MAX_SPEED + 3 : MAX_SPEED;
-    if(input.right) player.dx += ACCEL;
-    else if(input.left) player.dx -= ACCEL;
-    else player.dx *= FRICTION;
+function rectIntersect(r1, r2) {
+    return r1.x < r2.x + r2.w && r1.x + r1.w > r2.x &&
+           r1.y < r2.y + r2.h && r1.y + r1.h > r2.y;
+}
+
+function drawGame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    if(player.dx > maxS) player.dx = maxS; if(player.dx < -maxS) player.dx = -maxS;
-    if(Math.abs(player.dx) < 0.1) player.dx = 0;
-
-    if(player.dx > 0) player.facingRight = true; if(player.dx < 0) player.facingRight = false;
-
-    if(input.jump) {
-        if(player.grounded){
-            player.dy=player.inKart?-18:-15; player.grounded=false; player.jumpCount=1; playSound('jump');
-        } else if(player.jumpCount < 3){ 
-            player.dy=player.inKart?-16:-12; player.jumpCount++; playSound('jump');
-        }
-        input.jump = false; 
-    }
-    
-    player.dy+=0.8; player.x+=player.dx; player.y+=player.dy;
-    if (player.immune > 0) player.immune--;
-
-    let tx=player.x-canvas.width*0.3; if(tx<0)tx=0; camX+=(tx-camX)*0.15;
-    if(player.y>canvas.height+200) die();
-
-    // 碰撞检测
-    player.grounded=false;
-    blocks.forEach(b=>{
-        if(player.x<b.x+b.w&&player.x+player.w>b.x&&player.y<b.y+b.h&&player.y+player.h>b.y){
-            if (b.type === 'pipe_top' && player.dy > 0 && Math.abs(player.x+player.w/2 - (b.x+b.w/2)) < 20) {
-                player.enteringPipe = true; playSound('pipe'); return;
-            }
-            if(player.dy>0&&player.y+player.h-player.dy<=b.y+20){
-                player.y=b.y-player.h;player.dy=0;player.grounded=true;player.jumpCount=0;
-            } 
-            else if(player.dy<0 && player.y-player.dy >= b.y+b.h-20) {
-                player.y = b.y+b.h; player.dy=0;
-                if(b.type==='box' && b.active) {
-                    b.active=false; b.c='#CD853F'; 
-                    let itemType = b.loot;
-                    if(itemType==='coin') { state.coins++; state.score+=50; playSound('coin'); } 
-                    else { items.push({x:b.x+10, y:b.y-40, w:30, h:30, type:itemType, dx:2, dy:-5, ground:false}); playSound('powerup'); }
+    // 绘制实体
+    entities.forEach(e => {
+        let ex = e.x - camX;
+        if (ex > -100 && ex < canvas.width + 100) {
+            if (e.type === 'enemy' && e.dead) return;
+            ctx.fillStyle = e.c;
+            if (e.type === 'enemy') {
+                // 简单的怪物
+                ctx.beginPath(); ctx.arc(ex + e.w/2, e.y + e.h/2, e.w/2, 0, Math.PI*2); ctx.fill();
+                // 眼睛
+                ctx.fillStyle = 'white'; ctx.fillRect(ex+5, e.y+10, 10, 10); ctx.fillRect(ex+25, e.y+10, 10, 10);
+            } else {
+                ctx.fillRect(ex, e.y, e.w, e.h);
+                // 砖块纹理
+                if(e.type === 'brick') {
+                    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 2; ctx.strokeRect(ex, e.y, e.w, e.h);
                 }
             }
-            else { player.x-=player.dx; player.dx=0; } 
         }
     });
 
-    // 道具逻辑
-    items.forEach((i, idx)=>{
-        if(i.ground) return; 
-        if(i.type !== 'coin') { 
-            i.dy+=0.5; i.x+=i.dx; i.y+=i.dy;
-            blocks.forEach(b=>{ if(i.x<b.x+b.w&&i.x+i.w>b.x&&i.y<b.y+b.h&&i.y+i.h>b.y && i.dy>0) { i.y=b.y-i.h; i.dy=0; } });
-        }
-        if(player.x<i.x+i.w && player.x+player.w>i.x && player.y<i.y+i.h && player.y+player.h>i.y) {
-            items.splice(idx, 1);
-            if(i.type==='coin'){ state.coins++; state.score+=50; playSound('coin'); }
-            else if(i.type==='mushroom'){ player.isBig=true; player.w=50; player.h=70; state.score+=1000; playSound('powerup'); }
-            else if(i.type==='kart'){ player.inKart=true; player.isBig=true; player.w=60; player.h=40; state.score+=2000; playSound('powerup'); }
-        }
-    });
+    // 绘制玩家 (经典小人)
+    let px = player.x - camX;
+    ctx.fillStyle = "#FF0000"; ctx.fillRect(px, player.y, player.w, player.h); // 身体
+    ctx.fillStyle = "#FFCC80"; ctx.fillRect(px+5, player.y+5, player.w-10, 15); // 脸
+    // 眼睛方向
+    let eyeX = player.dx >= 0 ? px + 20 : px + 10;
+    ctx.fillStyle = "black"; ctx.fillRect(eyeX, player.y+8, 5, 5);
 
-    // 敌人逻辑
-    enemies.forEach(e=>{
-        if(!e.dead){
-            if(e.type==='bat' && e.startY !== undefined) e.y = e.startY + Math.sin(frames*0.05)*50;
-            else if(e.type==='rabbit' && e.g>0 && Math.random()<0.02 && e.y>e.startY) e.dy = -12;
-            else if(e.type==='slime') e.dx = Math.sin(frames*0.02)*2;
-            
-            e.dy+=e.g; e.x+=e.dx; e.y+=e.dy;
-            if(e.g>0) blocks.forEach(b=>{ if(e.x<b.x+b.w&&e.x+e.w>b.x&&e.y+e.h>=b.y&&e.y+e.h<=b.y+20){e.y=b.y-e.h;e.dy=0;} });
-            if(Math.abs(e.x-e.startX)>200 && e.type!=='bird') e.dx*=-1;
-
-            if(player.x<e.x+e.w&&player.x+player.w>e.x&&player.y<e.y+e.h&&player.y+player.h>e.y){
-                if (e.type === 'spiky' && !player.inKart) { takeDamage(); } 
-                else if(player.dy>0 && player.y+player.h < e.y+e.h*0.8){
-                    e.dead=true;player.dy=-8;state.score+=100;playSound('stomp');player.jumpCount=1; 
-                } else { takeDamage(); }
-            }
-        }
-    });
-
-    drawItemsAndEnemies();
-    drawBlocks();
-    drawPlayer(player.x-camX,player.y,player.w,player.h,player.facingRight);
-    
-    document.getElementById('score-val').innerText=state.score;
-    document.getElementById('coin-val').innerText=state.coins;
-    loopId=requestAnimationFrame(update);
+    // 更新 UI 数据
+    document.getElementById('s-val').innerText = state.score;
 }
 
-function takeDamage() {
-    if (player.immune > 0) return;
-    if (player.inKart) { player.inKart = false; player.isBig = true; player.w=50; player.h=70; player.immune = 120; playSound('pipe'); } 
-    else if (player.isBig) { player.isBig = false; player.w=40; player.h=56; player.immune = 120; playSound('pipe'); } 
-    else { die(); }
+function startGame() {
+    document.getElementById('overlay').style.display = 'none';
+    player.dead = false;
+    resizeCanvas(); // 确保开始时尺寸对
+    initLevel(1);
+    startMusic();
+    update();
 }
 
-function drawItemsAndEnemies() {
-    items.forEach(i=>{if(i.x-camX>-100&&i.x-camX<canvas.width) drawItem(i);});
-    enemies.forEach(e=>{if(!e.dead&&e.x-camX>-100&&e.x-camX<canvas.width) drawEnemy(e);});
+function gameOver() {
+    player.dead = true;
+    cancelAnimationFrame(loopId);
+    document.getElementById('overlay').style.display = 'flex';
+    document.querySelector('#overlay h1').innerHTML = "GAME OVER<br><span style='font-size:20px'>Tap to Reset</span>";
 }
 
-function drawBlocks() {
-    blocks.forEach(b=>{
-        if(b.x-camX>-100&&b.x-camX<canvas.width){
-            ctx.fillStyle=b.c; ctx.fillRect(b.x-camX,b.y,b.w,b.h);
-            if(b.type==='box' || b.type==='brick') {
-                 if (b.type==='box') {
-                    ctx.fillStyle='black'; ctx.font="30px monospace"; ctx.fillText("?", b.x-camX+15, b.y+35);
-                 } else { ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.fillRect(b.x-camX, b.y+20, b.w, 5); }
-                 ctx.strokeStyle='white'; ctx.lineWidth=2; ctx.strokeRect(b.x-camX,b.y,b.w,b.h);
-            }
-            if(b.type.includes('pipe')){
-                ctx.strokeStyle='#005500';ctx.lineWidth=4;ctx.strokeRect(b.x-camX,b.y,b.w,b.h);
-                if(b.type==='pipe_top'){ctx.fillStyle='#00AA00';ctx.fillRect(b.x-camX-5,b.y,b.w+10,20);}
-            }
-        }
-    });
-}
+// --- 输入绑定 (V21 改进版) ---
+const bindBtn = (id, key) => {
+    const el = document.getElementById(id);
+    el.addEventListener('touchstart', (e) => { 
+        e.preventDefault(); 
+        input[key] = true; 
+        el.classList.add('active'); 
+    }, {passive: false});
+    el.addEventListener('touchend', (e) => { 
+        e.preventDefault(); 
+        if (key !== 'jump') input[key] = false; // 跳跃在逻辑中自动重置
+        el.classList.remove('active'); 
+    }, {passive: false});
+};
 
-function die(){
-    if(player.dead)return;
-    player.dead=true; stopMusic(); cancelAnimationFrame(loopId); playMusic('gameover');
-    document.getElementById('overlay').style.display='flex';
-    document.getElementById('title-text').innerHTML="GAME OVER";
-    document.getElementById('start-btn-group').style.display='none';
-    document.getElementById('retry-btn-group').style.display='flex';
-}
+bindBtn('btn-left', 'left');
+bindBtn('btn-right', 'right');
+bindBtn('btn-jump', 'jump');
 
-// 启动与重试
-window.tryStartGame = function() {
-    resizeCanvas(); state.score=0;state.coins=0;state.level=1;
-    player.dead = false; document.getElementById('overlay').style.display='none';
-    playMusic('bgm',state.level); createLevel(state.level); update();
-}
-window.retryLevel=function(){
-    document.getElementById('overlay').style.display='none';
-    playMusic('bgm',state.level); createLevel(state.level);
-    if(loopId) cancelAnimationFrame(loopId); update();
-}
+// 键盘兼容
+window.addEventListener('keydown', e => {
+    if(e.code==='ArrowLeft') input.left=true;
+    if(e.code==='ArrowRight') input.right=true;
+    if(e.code==='Space') input.jump=true;
+});
+window.addEventListener('keyup', e => {
+    if(e.code==='ArrowLeft') input.left=false;
+    if(e.code==='ArrowRight') input.right=false;
+    if(e.code==='Space') input.jump=false;
+});
 
-// 输入监听 (触摸+键盘)
-window.addEventListener('keydown',e=>{if(e.code==='ArrowRight')input.right=true;if(e.code==='ArrowLeft')input.left=true;if((e.code==='Space'||e.code==='ArrowUp')&&!e.repeat)input.jump=true;});
-window.addEventListener('keyup',e=>{if(e.code==='ArrowRight')input.right=false;if(e.code==='ArrowLeft')input.left=false;if(e.code==='Space'||e.code==='ArrowUp')input.jump=false;});
-const bindTouch=(id,k)=>{const el=document.getElementById(id);el.addEventListener('touchstart',e=>{e.preventDefault();input[k]=true;el.classList.add('active');},{passive:false});el.addEventListener('touchend',e=>{e.preventDefault();if(k!=='jump')input[k]=false;el.classList.remove('active');},{passive:false});};
-bindTouch('btn-left','left'); bindTouch('btn-right','right'); bindTouch('btn-jump','jump');
-
-</script></body></html>
+</script>
+</body>
+</html>
 """
 
-game_html = game_template.replace("__PLAYLIST_DATA__", playlist_json).replace("__GAMEOVER_DATA__", game_over_b64)
-st.markdown("### 🍄 Super AI Kart: V20.0 (The Restoration)")
+game_html = game_template.replace("__PLAYLIST_DATA__", playlist_json)
+st.markdown("### 🍄 Super AI Kart V21 (Immersive Landscape)")
 components.html(game_html, height=600, scrolling=False)
