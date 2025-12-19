@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V33 Biomes",
+    page_title="Super AI Kart: V34 Control Fix",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -50,10 +50,19 @@ game_html = """
         background: rgba(0,0,0,0.85); z-index: 100;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
+    /* 按钮容器 */
+    .btn-container { display: flex; gap: 20px; margin-top: 20px; }
+    
     .start-btn {
-        padding: 20px 60px; font-size: 32px; background: #FF3D00; color: white;
+        padding: 15px 40px; font-size: 24px; background: #FF3D00; color: white;
         border: 4px solid #fff; cursor: pointer; border-radius: 8px; font-weight: bold;
     }
+    .retry-btn {
+        background: #00E676; /* 绿色按钮用于重试 */
+    }
+    
+    #menu h1 { color:#fff; margin-bottom:10px; text-shadow:4px 4px 0 #f00; font-size: 48px; }
+    #menu p { color:#ccc; margin-bottom:20px; font-size: 18px; }
 </style>
 </head>
 <body>
@@ -71,9 +80,13 @@ game_html = """
     </div>
 
     <div id="menu">
-        <h1 style="color:#fff; margin-bottom:20px; text-shadow:4px 4px 0 #f00;">SUPER AI KART</h1>
-        <p style="color:#ccc; margin-bottom:30px;">V33: Hidden Items & Biomes</p>
-        <button class="start-btn" onclick="startGame()">START GAME</button>
+        <h1 id="menu-title">SUPER AI KART</h1>
+        <p id="menu-sub">V34: Manual Kart & Retry</p>
+        
+        <div class="btn-container">
+            <button id="btn-retry" class="start-btn retry-btn" onclick="retryLevel()" style="display:none;">TRY AGAIN</button>
+            <button id="btn-start" class="start-btn" onclick="resetGame()">START GAME</button>
+        </div>
     </div>
 </div>
 
@@ -107,18 +120,12 @@ let particles = [];
 let items = []; 
 let goal = null;
 
-// --- 1. 新增地形主题配置 ---
 const BIOMES = [
-    // 0: 平原
-    { name: "PLAINS", bg: "#5C94FC", ground: "#C84C0C", brick: "#FFB74D", pipe: "#00E676", frictionMod: 1.0 },
-    // 1: 沙漠
-    { name: "DESERT", bg: "#F4C430", ground: "#E65100", brick: "#FFECB3", pipe: "#2E7D32", frictionMod: 1.0 },
-    // 2: 地下洞穴 (暗色背景，砖块偏灰)
-    { name: "CAVE",   bg: "#212121", ground: "#5D4037", brick: "#8D6E63", pipe: "#66BB6A", frictionMod: 1.0 },
-    // 3: 雪地 (很滑)
-    { name: "SNOW",   bg: "#81D4FA", ground: "#E1F5FE", brick: "#B3E5FC", pipe: "#0288D1", frictionMod: 0.2 }, // 摩擦系数越小越滑(这里反向逻辑：乘数)
-    // 4: 山川
-    { name: "HILLS",  bg: "#C5E1A5", ground: "#33691E", brick: "#AED581", pipe: "#558B2F", frictionMod: 1.0 }
+    { name: "PLAINS", bg: "#5C94FC", ground: "#C84C0C", brick: "#FFB74D", pipe: "#00E676", fricMod: 1.0 },
+    { name: "DESERT", bg: "#F4C430", ground: "#E65100", brick: "#FFECB3", pipe: "#2E7D32", fricMod: 1.0 },
+    { name: "CAVE",   bg: "#212121", ground: "#5D4037", brick: "#8D6E63", pipe: "#66BB6A", fricMod: 1.0 },
+    { name: "SNOW",   bg: "#81D4FA", ground: "#E1F5FE", brick: "#B3E5FC", pipe: "#0288D1", fricMod: 0.2 }, 
+    { name: "HILLS",  bg: "#C5E1A5", ground: "#33691E", brick: "#AED581", pipe: "#558B2F", fricMod: 1.0 }
 ];
 
 function initAudio() {
@@ -150,10 +157,7 @@ function playBGM() {
 
 function initLevel(lvl) {
     blocks = []; enemies = []; particles = []; items = [];
-    
-    // 选择生物群系
-    let biomeIndex = lvl % BIOMES.length;
-    let t = BIOMES[biomeIndex];
+    let t = BIOMES[lvl % BIOMES.length];
     
     player.x = 100; player.y = 0; player.dx=0; player.dy=0;
     player.w = player.big ? 40 : 32; 
@@ -161,10 +165,9 @@ function initLevel(lvl) {
     player.inPipe = false; player.dead = false;
     camX = 0;
 
-    // 起点安全区
+    // 起点
     blocks.push({x:-200, y:canvas.height-80, w:800, h:100, c: t.ground, type:'ground'}); 
     
-    // --- 2. 复杂地形生成器 ---
     let x = 600;
     let endX = 3000 + lvl * 600;
     
@@ -172,106 +175,66 @@ function initLevel(lvl) {
         let gap = 0;
         let groundY = canvas.height - 80;
         
-        // 根据群系改变地形特征
-        if(t.name === "DESERT") {
-            // 沙漠：平坦但沟壑宽
-            gap = Math.random() < 0.3 ? 150 : 0;
-        } else if(t.name === "HILLS") {
-            // 山川：高低起伏
+        if(t.name === "DESERT") gap = Math.random() < 0.3 ? 150 : 0;
+        else if(t.name === "HILLS") {
             gap = Math.random() < 0.2 ? 100 : 0;
-            groundY -= Math.floor(Math.random() * 3) * 60; // 0, -60, -120, -180
+            groundY -= Math.floor(Math.random() * 3) * 60; 
         } else if(t.name === "CAVE") {
-            // 洞穴：地面较平，但有天花板
             gap = Math.random() < 0.2 ? 80 : 0;
-            // 添加天花板
             blocks.push({x:x, y:0, w:400, h:80, c: t.ground, type:'ground'});
         } else {
-            // 平原/雪地：标准随机
             gap = Math.random() < 0.2 ? 120 : 0;
         }
 
-        x += gap; // 加上沟壑宽度
-
+        x += gap; 
         let w = 400 + Math.random() * 400;
-        // 地面
         blocks.push({x:x, y:groundY, w:w, h:canvas.height-groundY+100, c: t.ground, type:'ground'});
         
-        // 怪物生成
         if(w > 300) {
             let ex = x + 100 + Math.random()*(w-200);
             let eType = Math.floor(Math.random() * 3); 
             enemies.push({x:ex, y:groundY-40, w:36, h:36, dx:-1.5, type:eType, dead:false});
         }
         
-        // --- 3. 砖块与藏宝 (Hidden Items) ---
-        // 砖块现在有 content 属性，初始不生成 item，顶了才出
         if(Math.random() < 0.7) { 
             let bx = x + 50 + Math.random() * 100;
             let by = groundY - 140; 
-            
-            // 随机决定砖块里藏什么
             let content = null;
             let rng = Math.random();
             if(rng < 0.5) content = "coin";
             else if(rng < 0.6) content = "mushroom";
             else if(rng < 0.65) content = "kart";
 
-            blocks.push({
-                x:bx, y:by, w:60, h:60, // 变更为正方形问号块
-                c: content ? "#FFD700" : t.brick, // 有东西的是金色，没东西的是砖色
-                type: 'brick',
-                content: content,
-                hit: false
-            });
-
-            // 旁边配几个普通砖块方便跳跃
+            blocks.push({ x:bx, y:by, w:60, h:60, c: content?"#FFD700":t.brick, type:'brick', content:content, hit:false });
             blocks.push({x:bx+60, y:by, w:60, h:60, c: t.brick, type:'brick', content:null});
             blocks.push({x:bx-60, y:by, w:60, h:60, c: t.brick, type:'brick', content:null});
         }
-        
         x += w;
     }
     
-    // 终点
     blocks.push({x:x, y:canvas.height-80, w:500, h:100, c: t.ground, type:'ground'});
     goal = { x: x + 200, y: canvas.height - 150, w: 70, h: 150, cx: x+235 };
     blocks.push({ x: goal.x, y: goal.y, w: goal.w, h: goal.h, c: t.pipe, type:'pipe' });
 }
 
-// 弹出道具函数
 function spawnItem(block) {
     if(!block.content) return;
-    
     let type = 0;
     if(block.content === "coin") type = 0;
     if(block.content === "mushroom") type = 1;
     if(block.content === "kart") type = 2;
 
-    // 道具从砖块上方冒出来
-    items.push({
-        x: block.x + 15,
-        y: block.y, // 初始位置在砖块里
-        w: 30, h: 30,
-        type: type,
-        dy: -5, // 向上弹起
-        targetY: block.y - 35 // 最终停留在上方
-    });
-
-    // 特效
+    items.push({ x: block.x + 15, y: block.y, w: 30, h: 30, type: type, dy: -5, targetY: block.y - 35 });
     playTone(500, 'square', 0.1);
     for(let i=0;i<5;i++) particles.push({x:block.x+30, y:block.y+60, dx:(Math.random()-0.5)*5, dy:Math.random()*5, life:15, c:"#FFD700"});
 
-    // 砖块变废
-    block.content = null;
-    block.c = "#6D4C41"; // 变成褐色废块
-    block.hit = true;
+    block.content = null; block.c = "#6D4C41"; block.hit = true;
 }
 
 function update() {
     if(!running) return;
     frames++;
 
-    // 计时器处理
     if(player.kart) {
         player.timer--;
         if(player.timer <= 0) {
@@ -291,20 +254,30 @@ function update() {
         return;
     }
 
-    // --- 4. 物理与环境摩擦力 ---
     let t = BIOMES[level % BIOMES.length];
-    let currentFric = isMobile ? 0.6 : 0.8;
-    
-    // 雪地打滑处理
-    if(t.name === "SNOW") currentFric = 0.96; // 摩擦力接近1，非常滑
+    let friction = (isMobile ? 0.6 : 0.8);
+    // 雪地特别滑
+    if(t.name === "SNOW") friction = 0.96;
 
+    // --- 1. 赛车操控修复 (Kart Control Fix) ---
+    // 之前是 player.dx = 8 强制赋值，现在改为受控加速
     if(player.kart) {
-        player.dx = 8; 
-        if(input.l) player.dx = 4;
+        let kAcc = 1.5; // 赛车加速极快
+        let kMax = 12.0; // 赛车极速更高
+        
+        if(input.r) player.dx += kAcc;
+        else if(input.l) player.dx -= kAcc;
+        else player.dx *= 0.9; // 赛车松油门减速也快
+        
+        // 限制极速
+        if(player.dx > kMax) player.dx = kMax;
+        if(player.dx < -kMax) player.dx = -kMax;
+        
     } else {
+        // 普通模式物理
         if(input.r) player.dx += PHYSICS.acc;
         else if(input.l) player.dx -= PHYSICS.acc;
-        else player.dx *= currentFric; // 应用环境摩擦
+        else player.dx *= friction; 
         
         if(player.dx > PHYSICS.spd) player.dx = PHYSICS.spd;
         if(player.dx < -PHYSICS.spd) player.dx = -PHYSICS.spd;
@@ -327,9 +300,7 @@ function update() {
     player.y += player.dy;
     
     if(player.kart && player.y > canvas.height - 100) {
-        player.y = canvas.height - 100;
-        player.dy = 0;
-        player.ground = true;
+        player.y = canvas.height - 100; player.dy = 0; player.ground = true;
     }
 
     camX += (player.x - canvas.width*0.3 - camX) * 0.1;
@@ -340,32 +311,19 @@ function update() {
     player.ground = false;
     blocks.forEach(b => {
         if(colCheck(player, b)) {
-            // 从上方踩
             if(player.dy >= 0 && player.y + player.h - player.dy <= b.y + 25) {
                 player.y = b.y - player.h; player.dy = 0; player.ground = true; player.jumps = 0;
-            } 
-            // 从下方顶 (关键修改：顶砖块！)
-            else if(player.dy < 0 && player.y - player.dy >= b.y + b.h - 20) {
-                player.y = b.y + b.h; 
-                player.dy = 0;
-                // 触发顶砖块逻辑
-                spawnItem(b);
-            } 
-            // 侧面撞
-            else if(player.dx > 0) { player.x = b.x - player.w; player.dx = 0; }
+            } else if(player.dy < 0 && player.y - player.dy >= b.y + b.h - 20) {
+                player.y = b.y + b.h; player.dy = 0; spawnItem(b);
+            } else if(player.dx > 0) { player.x = b.x - player.w; player.dx = 0; }
             else if(player.dx < 0) { player.x = b.x + b.w; player.dx = 0; }
         }
     });
 
-    // 道具逻辑 (增加弹出动画)
     items.forEach((it, i) => {
-        // 弹出动画
         if(it.dy < 0 || it.y < it.targetY) {
-            it.y += it.dy;
-            if(it.dy < 0) it.dy += 0.5; // 重力
-            if(it.y >= it.targetY && it.dy > 0) it.dy = 0; // 停在砖块上
+            it.y += it.dy; if(it.dy < 0) it.dy += 0.5; if(it.y >= it.targetY && it.dy > 0) it.dy = 0;
         }
-
         if(colCheck(player, it)) {
             items.splice(i, 1); 
             if(it.type === 0) { score += 100; playTone(800, 'sine', 0.1); }
@@ -411,10 +369,50 @@ function colCheck(a, b) {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
+// --- 2. 游戏结束界面与重生逻辑 ---
 function gameOver() {
     running = false;
-    document.getElementById('menu').style.display = 'flex';
-    document.querySelector('#menu h1').innerText = "GAME OVER";
+    let menu = document.getElementById('menu');
+    let title = document.getElementById('menu-title');
+    let sub = document.getElementById('menu-sub');
+    let retryBtn = document.getElementById('btn-retry');
+    let startBtn = document.getElementById('btn-start');
+
+    menu.style.display = 'flex';
+    title.innerText = "GAME OVER";
+    title.style.color = "#FF3D00";
+    sub.innerText = "World " + (level+1) + " Score: " + score;
+    
+    // 显示重试按钮
+    retryBtn.style.display = 'block';
+    startBtn.innerText = "MAIN MENU";
+}
+
+function resetGame() {
+    // 回到主菜单/从头开始
+    initAudio();
+    level = 0; score = 0;
+    // 重置按钮状态
+    document.getElementById('btn-retry').style.display = 'none';
+    document.getElementById('btn-start').innerText = "START GAME";
+    
+    startGame();
+}
+
+function retryLevel() {
+    // 重新开始当前关卡
+    initAudio();
+    // 玩家状态重置（变小）但保留关卡数
+    startGame();
+}
+
+function startGame() {
+    document.getElementById('menu').style.display = 'none';
+    // 重置玩家核心状态
+    player.big = false; player.kart = false; 
+    initLevel(level); // 重新生成当前关卡
+    running = true;
+    update();
 }
 
 function draw() {
@@ -422,27 +420,17 @@ function draw() {
     ctx.fillStyle = t.bg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // UI: 显示当前环境
     document.getElementById('world-ui').innerText = "WORLD 1-" + (level+1) + " (" + t.name + ")";
 
     blocks.forEach(b => {
         if(b.x > camX+canvas.width || b.x+b.w < camX) return;
         ctx.fillStyle = b.c;
         ctx.fillRect(b.x-camX, b.y, b.w, b.h);
-        
-        // 砖块纹理
         if(b.type === 'brick') {
-            ctx.fillStyle = "rgba(0,0,0,0.2)";
-            ctx.fillRect(b.x-camX+5, b.y+5, b.w-10, b.h-10);
-            if(b.content) {
-                // 如果有东西，画个问号
-                ctx.fillStyle = "#000";
-                ctx.font = "30px monospace";
-                ctx.fillText("?", b.x-camX+20, b.y+40);
-            }
+            ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.fillRect(b.x-camX+5, b.y+5, b.w-10, b.h-10);
+            if(b.content) { ctx.fillStyle = "#000"; ctx.font = "30px monospace"; ctx.fillText("?", b.x-camX+20, b.y+40); }
         } else if (b.type === 'ground') {
-             ctx.fillStyle = "rgba(0,0,0,0.1)"; 
-             ctx.fillRect(b.x-camX, b.y, b.w, 10); // 草皮层
+             ctx.fillStyle = "rgba(0,0,0,0.1)"; ctx.fillRect(b.x-camX, b.y, b.w, 10);
         }
     });
 
@@ -461,7 +449,6 @@ function draw() {
         }
     });
 
-    // Goal
     if(goal) {
         let gx = goal.x - camX;
         ctx.fillStyle = t.pipe; ctx.fillRect(gx-5, goal.y, goal.w+10, 30); 
@@ -508,16 +495,6 @@ function draw() {
     } else {
         modeText.style.display = 'none';
     }
-}
-
-function startGame() {
-    initAudio();
-    document.getElementById('menu').style.display = 'none';
-    level = 0; score = 0;
-    player.big = false; player.kart = false;
-    initLevel(0);
-    running = true;
-    update();
 }
 
 function checkOrient() {
