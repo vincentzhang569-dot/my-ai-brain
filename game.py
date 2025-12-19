@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V41 Boss Combo & VFX",
+    page_title="Super AI Kart: V42 Loot & Rewards",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -29,8 +29,9 @@ game_html = """
 
     .hud { position: absolute; top: 20px; color: #fff; font-size: 20px; font-weight: 800; text-shadow: 2px 2px 0 #000; pointer-events: none; letter-spacing: 1px; }
     #score-ui { left: 20px; background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 10px; }
+    #coin-ui { left: 20px; top: 60px; color: #FFD700; background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 10px; display: flex; align-items: center; }
     #world-ui { right: 20px; color: #FFD700; background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 10px; }
-    #hp-ui { top: 60px; left: 20px; color: #FF5252; font-size: 18px; }
+    #hp-ui { top: 100px; left: 20px; color: #FF5252; font-size: 18px; }
     
     #boss-ui { 
         position: absolute; top: 80px; left: 50%; transform: translateX(-50%); 
@@ -78,6 +79,7 @@ game_html = """
 <div id="game-container">
     <canvas id="c"></canvas>
     <div id="score-ui" class="hud">SCORE: 0</div>
+    <div id="coin-ui" class="hud">🪙 0</div>
     <div id="world-ui" class="hud">WORLD 1-1</div>
     <div id="hp-ui" class="hud">HP: 1</div>
     
@@ -94,7 +96,7 @@ game_html = """
 
     <div id="menu">
         <h1 id="menu-title">SUPER AI KART</h1>
-        <p id="menu-sub">V41: Boss Combos & VFX Update</p>
+        <p id="menu-sub">V42: Loot & Rewards Update</p>
         <div class="btn-container">
             <button id="btn-retry" class="start-btn" onclick="retryLevel()" style="display:none; background: #4CAF50;">RETRY</button>
             <button id="btn-start" class="start-btn" onclick="resetGame()">PLAY</button>
@@ -115,6 +117,7 @@ const PHYSICS = isMobile ?
 let running = false;
 let frames = 0;
 let score = 0;
+let coinCount = 0; // New Coin Counter
 let level = 0;
 let audioCtx = null;
 let bgmTimer = null;
@@ -134,6 +137,7 @@ let particles = [];
 let items = []; 
 let goal = null;
 let boss = null; 
+let floatText = []; // Floating text for +HP
 
 // Visuals & Biomes
 const BIOMES = [
@@ -193,7 +197,7 @@ function playBGM() {
 
 // --- Init & Gen ---
 function initLevel(lvl) {
-    blocks = []; enemies = []; particles = []; items = []; boss = null;
+    blocks = []; enemies = []; particles = []; items = []; boss = null; floatText = [];
     let t = BIOMES[lvl % BIOMES.length];
     
     player.x = 100; player.y = 0; player.dx=0; player.dy=0;
@@ -297,7 +301,11 @@ function spawnItem(block) {
     if(!block.content) return;
     let type = (block.content==="coin")?0:(block.content==="mushroom"?1:2);
     let isMoving = (type !== 0);
-    items.push({ x: block.x+15, y: block.y, w:30, h:30, type:type, dy:-6, dx:isMoving?2:0, targetY:block.y-35, state:'spawning' });
+    
+    // FIX: Mushroom always moves RIGHT (dx = 2)
+    let idX = isMoving ? 2 : 0; 
+
+    items.push({ x: block.x+15, y: block.y, w:30, h:30, type:type, dy:-6, dx:idX, targetY:block.y-35, state:'spawning' });
     playTone(500, 'square', 0.1);
     block.content=null; block.hit=true;
 }
@@ -325,19 +333,11 @@ function update() {
             player.dy = (player.ground ? PHYSICS.jump : PHYSICS.jump*0.9); 
             player.jumps++; input.jLock=true; playTone(330,'square',0.1); 
             
-            // TRIPLE JUMP VFX
             if(player.jumps === 3) {
                  for(let k=0; k<12; k++) {
-                     particles.push({
-                         x: player.x + player.w/2, 
-                         y: player.y + player.h,
-                         dx: (Math.random()-0.5) * 12,
-                         dy: (Math.random() * 8) + 2,
-                         life: 20,
-                         c: '#00E676' // Green energy
-                     });
+                     particles.push({x: player.x + player.w/2, y: player.y + player.h, dx: (Math.random()-0.5) * 12, dy: (Math.random() * 8) + 2, life: 20, c: '#00E676'});
                  }
-                 playTone(600, 'square', 0.15); // Higher pitch for triple jump
+                 playTone(600, 'square', 0.15); 
             }
         }
     }
@@ -368,7 +368,6 @@ function update() {
         draw(); requestAnimationFrame(update); return;
     }
 
-    // BOSS LOGIC
     if(boss && !boss.dead) {
         if(boss.x < player.x + 800) {
             document.getElementById('boss-ui').style.display = 'block';
@@ -387,18 +386,28 @@ function update() {
             if(boss.iframes > 0) boss.iframes--;
 
             if(colCheck(player, boss)) {
-                if(player.kart) { boss.hp = 0; boss.dead = true; score += 5000; spawnExplosion(boss.x, boss.y); }
+                if(player.kart) { boss.hp = 0; }
                 else if(player.dy > 0 && player.y + player.h < boss.y + boss.h * 0.6) {
                     if(boss.iframes <= 0) {
-                        boss.hp--; 
-                        // CRITICAL CHANGE: Minimal invulnerability (10 frames) to allow rapid bounces
-                        boss.iframes = 10; 
-                        player.dy = -10; spawnExplosion(boss.x+boss.w/2, boss.y);
+                        boss.hp--; boss.iframes = 10; player.dy = -10; spawnExplosion(boss.x+boss.w/2, boss.y);
                         playTone(150, 'square', 0.3);
-                        if(boss.hp <= 0) { boss.dead = true; score += 3000; playTone(50, 'noise', 0.8); }
                     }
-                } else if(player.invul <= 0) {
-                    takeDamage();
+                } else if(player.invul <= 0) { takeDamage(); }
+
+                if(boss.hp <= 0) { 
+                    boss.dead = true; score += 5000; playTone(50, 'noise', 0.8);
+                    // BOSS LOOT FOUNTAIN
+                    for(let i=0; i<25; i++) {
+                        items.push({
+                             x: boss.x + boss.w/2,
+                             y: boss.y,
+                             w: 30, h: 30,
+                             type: 0, // Coin
+                             dx: (Math.random()-0.5) * 15,
+                             dy: -10 - Math.random()*10,
+                             state: 'moving' // Let them fall
+                        });
+                    }
                 }
             }
         }
@@ -406,11 +415,34 @@ function update() {
 
     // ITEMS
     items.forEach((it, i) => {
-        if(it.state!=='static') { it.dy+=0.5; it.x+=it.dx; it.y+=it.dy; }
-        blocks.forEach(b => { if(colCheck(it, b) && it.state!=='static') { if(it.dy>0) { it.y=b.y-it.h; it.dy=0; } else it.dx*=-1; } });
+        if(it.state!=='static') { 
+            it.dy+=0.5; it.x+=it.dx; it.y+=it.dy;
+            if(it.y > canvas.height) items.splice(i,1); // Cleanup fallen items
+        }
+        
+        blocks.forEach(b => { 
+            if(colCheck(it, b) && it.state!=='static') { 
+                if(it.dy>0) { 
+                    it.y=b.y-it.h; 
+                    it.dy= -it.dy * 0.5; // Bounce items slightly
+                    if(Math.abs(it.dy) < 1) it.dy=0;
+                } else it.dx*=-1; 
+            } 
+        });
+
         if(colCheck(player, it)) {
             items.splice(i,1); 
-            if(it.type===0) score+=100; 
+            if(it.type===0) { 
+                // COIN LOGIC
+                score+=100; 
+                coinCount++;
+                if(coinCount >= 50) {
+                    coinCount -= 50;
+                    player.hp++;
+                    playTone(600, 'square', 0.3); playTone(800, 'square', 0.3); // 1UP Sound
+                    floatText.push({x:player.x, y:player.y-20, t:"+1 HP", life:60});
+                }
+            } 
             else if(it.type===1) { 
                 player.hp++; 
                 if(player.hp > 1) { player.w=40; player.h=56; }
@@ -461,7 +493,7 @@ function takeDamage() {
 function spawnExplosion(x, y) { for(let i=0;i<8;i++) particles.push({x:x,y:y,dx:(Math.random()-0.5)*10,dy:(Math.random()-0.5)*10,life:15,c:'#fff'}); }
 function colCheck(a, b) { return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
 function gameOver() { running = false; document.getElementById('menu').style.display='flex'; document.getElementById('btn-retry').style.display='block'; }
-function resetGame() { initAudio(); level=0; score=0; player.hp=1; startGame(); }
+function resetGame() { initAudio(); level=0; score=0; coinCount=0; player.hp=1; startGame(); }
 function retryLevel() { initAudio(); player.hp=1; startGame(); }
 function startGame() { document.getElementById('menu').style.display='none'; player.kart=false; initLevel(level); running=true; update(); }
 
@@ -478,6 +510,7 @@ function draw() {
     if(player.hp > 2) hpText += " (MAX)";
     document.getElementById('hp-ui').innerText = hpText;
     document.getElementById('hp-ui').style.color = (player.hp>1) ? "#00E676" : "#FF5252";
+    document.getElementById('coin-ui').innerText = "🪙 " + coinCount + " / 50";
 
     blocks.forEach(b => {
         if(b.x > camX+canvas.width || b.x+b.w < camX) return;
@@ -487,12 +520,11 @@ function draw() {
         if(b.type === 'brick') { 
             ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.fillRect(bx+5, b.y+5, b.w-10, b.h-10);
             if(b.content) { 
-                // Enhanced Question Mark
                 ctx.fillStyle="#FFD700"; 
                 ctx.font = "900 32px 'Arial Black', sans-serif";
                 ctx.textAlign = "center";
                 ctx.fillText("?", bx+30, b.y+42);
-                ctx.textAlign = "start"; // Reset
+                ctx.textAlign = "start"; 
             }
         }
         if(b.type === 'pipe') {
@@ -576,6 +608,13 @@ function draw() {
         p.x += p.dx; p.y += p.dy; p.life--;
         ctx.fillStyle = p.c; ctx.fillRect(p.x-camX, p.y, 5, 5);
         if(p.life<=0) particles.splice(i, 1);
+    });
+    
+    // Float Text
+    floatText.forEach((f, i) => {
+        f.y -= 1; f.life--;
+        ctx.fillStyle = "#fff"; ctx.font = "bold 20px Arial"; ctx.fillText(f.t, f.x-camX, f.y);
+        if(f.life<=0) floatText.splice(i, 1);
     });
 
     if(!player.dead && player.invul % 4 < 2) {
