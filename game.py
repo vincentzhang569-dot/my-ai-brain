@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V35 Physics Update",
+    page_title="Super AI Kart: V36 Audio Remaster",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -76,7 +76,7 @@ game_html = """
 
     <div id="menu">
         <h1 id="menu-title">SUPER AI KART</h1>
-        <p id="menu-sub">V35: Eye-Care & Physics</p>
+        <p id="menu-sub">V36: Dynamic BGM & SFX</p>
         <div class="btn-container">
             <button id="btn-retry" class="start-btn retry-btn" onclick="retryLevel()" style="display:none;">TRY AGAIN</button>
             <button id="btn-start" class="start-btn" onclick="resetGame()">START GAME</button>
@@ -114,15 +114,10 @@ let items = [];
 let goal = null;
 
 const BIOMES = [
-    // 0: 平原
     { name: "PLAINS", bg: "#5C94FC", ground: "#C84C0C", brick: "#FFB74D", pipe: "#00E676", fricMod: 1.0 },
-    // 1: 沙漠 (颜色大改：去掉了刺眼的亮黄，改为柔和的杏仁色/落日风)
     { name: "DESERT", bg: "#FFE0B2", ground: "#EF6C00", brick: "#FFCC80", pipe: "#2E7D32", fricMod: 1.0 },
-    // 2: 洞穴
     { name: "CAVE",   bg: "#212121", ground: "#5D4037", brick: "#8D6E63", pipe: "#66BB6A", fricMod: 1.0 },
-    // 3: 雪地
     { name: "SNOW",   bg: "#81D4FA", ground: "#E1F5FE", brick: "#B3E5FC", pipe: "#0288D1", fricMod: 0.2 }, 
-    // 4: 山川
     { name: "HILLS",  bg: "#C5E1A5", ground: "#33691E", brick: "#AED581", pipe: "#558B2F", fricMod: 1.0 }
 ];
 
@@ -134,6 +129,7 @@ function initAudio() {
     bgmTimer = setInterval(playBGM, 3200); 
 }
 
+// 简单的音色生成器
 function playTone(f, t, d, v=0.1) {
     if(!audioCtx || audioCtx.state === 'suspended') return;
     try {
@@ -144,12 +140,63 @@ function playTone(f, t, d, v=0.1) {
     } catch(e) {}
 }
 
+// --- 音乐核心更新 ---
 function playBGM() {
     if(!running || player.dead) return;
-    let base = player.kart ? 440 : (220 + (level*20));
-    let speed = player.kart ? 100 : 200;
-    [0, 1, 2, 3, 4, 5, 6, 7].forEach((i) => {
-        setTimeout(() => { if(running) playTone((i%2==0)?base:base*1.5, 'triangle', 0.1, 0.05); }, i * speed);
+
+    let t = BIOMES[level % BIOMES.length];
+    let notes = [];
+    let wave = 'triangle';
+    let speed = 200; // 每个音符的间隔 ms
+
+    if (player.kart) {
+        // 赛车模式：急速高能
+        notes = [440, 440, 554, 659, 440, 554, 659, 880];
+        wave = 'sawtooth';
+        speed = 100; // 很快
+    } else {
+        // 根据关卡变换 BGM
+        switch(t.name) {
+            case "PLAINS": 
+                // C大调，快乐，经典
+                notes = [262, 330, 392, 523, 392, 330, 262, 196]; 
+                wave = 'triangle';
+                speed = 200;
+                break;
+            case "DESERT":
+                // 异域风情，半音阶，Phrygian风格
+                notes = [294, 311, 370, 294, 311, 370, 494, 294];
+                wave = 'sawtooth';
+                speed = 250;
+                break;
+            case "CAVE":
+                // 低沉，空灵，慢
+                notes = [110, 110, 0, 147, 110, 0, 131, 0];
+                wave = 'square';
+                speed = 400; // 很慢
+                break;
+            case "SNOW":
+                // 高音，叮叮当当
+                notes = [523, 0, 659, 0, 784, 0, 1047, 0];
+                wave = 'sine';
+                speed = 200;
+                break;
+            case "HILLS":
+                // 进行曲，有力
+                notes = [349, 349, 392, 392, 440, 440, 349, 0];
+                wave = 'square';
+                speed = 200;
+                break;
+        }
+    }
+
+    // 播放序列
+    notes.forEach((freq, i) => {
+        if(freq > 0) {
+            setTimeout(() => { 
+                if(running) playTone(freq, wave, 0.1, 0.05); 
+            }, i * speed);
+        }
     });
 }
 
@@ -203,7 +250,6 @@ function initLevel(lvl) {
             else if(rng < 0.65) content = "kart";
 
             blocks.push({ x:bx, y:by, w:60, h:60, c: content?"#FFD700":t.brick, type:'brick', content:content, hit:false });
-            // 确保砖块旁边有空间让蘑菇掉下来，或者连成片
             blocks.push({x:bx+60, y:by, w:60, h:60, c: t.brick, type:'brick', content:null});
             blocks.push({x:bx-60, y:by, w:60, h:60, c: t.brick, type:'brick', content:null});
         }
@@ -222,20 +268,12 @@ function spawnItem(block) {
     if(block.content === "mushroom") type = 1;
     if(block.content === "kart") type = 2;
 
-    // 道具出生设定：
-    // 金币(type 0) 直接弹一下消失
-    // 蘑菇/赛车(type 1,2) 弹出来后会落地并移动
     let isMovingItem = (type !== 0);
     
     items.push({ 
-        x: block.x + 15, 
-        y: block.y, 
-        w: 30, h: 30, 
-        type: type, 
-        dy: -6, // 向上弹起
-        dx: isMovingItem ? 2 : 0, // 只有蘑菇会横向移动
-        targetY: block.y - 35, // 仅用于动画阶段判断
-        state: 'spawning' // 状态机：spawning -> moving
+        x: block.x + 15, y: block.y, w: 30, h: 30, type: type, 
+        dy: -6, dx: isMovingItem ? 2 : 0, 
+        targetY: block.y - 35, state: 'spawning' 
     });
 
     playTone(500, 'square', 0.1);
@@ -286,14 +324,15 @@ function update() {
         if(player.dx < -PHYSICS.spd) player.dx = -PHYSICS.spd;
     }
     
+    // --- 跳跃音效复古化 ---
     if(input.j && !input.jLock) {
         let maxJumps = player.kart ? 999 : 3;
         if(player.ground) {
             player.dy = PHYSICS.jump; player.jumps = 1; input.jLock = true;
-            playTone(300, 'square', 0.1);
+            playTone(330, 'square', 0.1); // 经典的“噗”声，不再变调
         } else if(player.jumps > 0 && player.jumps < maxJumps) { 
             player.dy = PHYSICS.jump * 0.9; player.jumps++; input.jLock = true;
-            playTone(450 + player.jumps*100, 'square', 0.1);
+            playTone(330, 'square', 0.1); // 二段/三段跳声音保持一致，不刺耳
         }
     }
     if(!input.j) input.jLock = false;
@@ -323,41 +362,21 @@ function update() {
         }
     });
 
-    // --- 道具物理更新 (Item Physics Loop) ---
     items.forEach((it, i) => {
-        // 如果是金币，向上飘一下就没了
         if(it.type === 0) {
             it.y += it.dy;
-            if(it.y < it.targetY) items.splice(i, 1); // 消失，已经加过分了在碰撞里做? 不，金币碰玩家才算
-            // 修正：金币逻辑。为了简单，金币碰砖块出的时候直接算分特效，然后道具列表里移除，或者让它飞一下。
-            // 这里让它飞一下再检测碰撞太麻烦，直接让它在生成时如果是金币，稍微飞一下然后玩家吸附或者直接加分。
-            // 简单化：金币还是悬浮吧，或者直接给分。
-            // 修正逻辑：金币保持原样悬浮，蘑菇才掉落。
-            if(it.dy < 0) { it.y += it.dy; it.dy += 0.5; } // 简单的弹跳
+            if(it.dy < 0) { it.y += it.dy; it.dy += 0.5; }
         } else {
-            // 蘑菇/赛车逻辑
             if(it.state === 'spawning') {
                 it.y += it.dy;
-                if(it.dy < 0) it.dy += 0.5; // 减速上升
-                if(it.dy >= 0) it.state = 'moving'; // 开始下落移动
+                if(it.dy < 0) it.dy += 0.5; 
+                if(it.dy >= 0) it.state = 'moving'; 
             } else {
-                // 移动状态：受重力，检测碰撞
-                it.dy += 0.5; // 重力
-                it.x += it.dx;
-                it.y += it.dy;
-
-                // 道具与地形碰撞
+                it.dy += 0.5; it.x += it.dx; it.y += it.dy;
                 blocks.forEach(b => {
                     if(colCheck(it, b)) {
-                        // 落地
-                        if(it.dy > 0 && it.y < b.y + 20) {
-                            it.y = b.y - it.h;
-                            it.dy = 0;
-                        }
-                        // 撞墙反弹
-                        else if(it.x < b.x + b.w && it.x + it.w > b.x) {
-                            it.dx *= -1;
-                        }
+                        if(it.dy > 0 && it.y < b.y + 20) { it.y = b.y - it.h; it.dy = 0; }
+                        else if(it.x < b.x + b.w && it.x + it.w > b.x) { it.dx *= -1; }
                     }
                 });
             }
@@ -370,7 +389,6 @@ function update() {
             else if(it.type === 2) { score += 1000; player.kart = true; player.timer = 600; player.w = 48; player.h = 24; playTone(100, 'sawtooth', 0.5); }
         }
         
-        // 掉出地图
         if(it.y > canvas.height + 100) items.splice(i, 1);
     });
 
