@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Super AI Kart: V40 Stacking Mushrooms",
+    page_title="Super AI Kart: V41 Boss Combo & VFX",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -38,7 +38,7 @@ game_html = """
     }
     #boss-name { color: #fff; text-align: center; font-size: 14px; margin-bottom: 4px; text-transform: uppercase; text-shadow: 1px 1px 0 #000; }
     #boss-bar-bg { width: 100%; height: 12px; background: #555; border-radius: 6px; overflow: hidden; }
-    #boss-hp { width: 100%; height: 100%; background: linear-gradient(90deg, #ff4444, #cc0000); transition: width 0.2s; }
+    #boss-hp { width: 100%; height: 100%; background: linear-gradient(90deg, #ff4444, #cc0000); transition: width 0.1s; }
 
     #controls { display: none; position: absolute; bottom: 0; width: 100%; height: 100%; pointer-events: none; }
     .btn {
@@ -94,7 +94,7 @@ game_html = """
 
     <div id="menu">
         <h1 id="menu-title">SUPER AI KART</h1>
-        <p id="menu-sub">V40: Mushroom Stacking Update</p>
+        <p id="menu-sub">V41: Boss Combos & VFX Update</p>
         <div class="btn-container">
             <button id="btn-retry" class="start-btn" onclick="retryLevel()" style="display:none; background: #4CAF50;">RETRY</button>
             <button id="btn-start" class="start-btn" onclick="resetGame()">PLAY</button>
@@ -119,11 +119,10 @@ let level = 0;
 let audioCtx = null;
 let bgmTimer = null;
 
-// Player now has HP instead of just big/small
 let player = { 
     x:100, y:0, w:32, h:40, dx:0, dy:0, 
     ground:false, jumps:0, dead:false, inPipe:false, 
-    hp: 1, // 1=Small, 2=Big, 3+=Stacked
+    hp: 1, 
     kart:false, timer:0, invul:0, facing:1 
 };
 
@@ -144,7 +143,6 @@ const BIOMES = [
     { name: "SKY",    bg: "#E1F5FE", ground: "#0288D1", top: "#FFFFFF", brick: "#B3E5FC", pipe: "#01579B" }
 ];
 
-// Audio System
 function initAudio() {
     if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -199,7 +197,6 @@ function initLevel(lvl) {
     let t = BIOMES[lvl % BIOMES.length];
     
     player.x = 100; player.y = 0; player.dx=0; player.dy=0;
-    // HP Persists between levels, but size resets to physics body dimensions
     player.w = player.hp > 1 ? 40 : 32; 
     player.h = player.hp > 1 ? 56 : 40; 
     player.inPipe = false; player.dead = false; player.invul = 0;
@@ -280,7 +277,7 @@ function createBricks(bx, by, t) {
     let rng = Math.random();
     let content = null;
     if(rng < 0.6) content = "coin";
-    else if(rng < 0.8) content = "mushroom"; // Stacking mushroom
+    else if(rng < 0.8) content = "mushroom"; 
     else if(rng < 0.9) content = "kart";
     
     blocks.push({ x:bx, y:by, w:60, h:60, c: t.brick, type:'brick', content:content, hit:false });
@@ -327,6 +324,21 @@ function update() {
         if(player.ground || (player.jumps > 0 && player.jumps < (player.kart?999:3))) { 
             player.dy = (player.ground ? PHYSICS.jump : PHYSICS.jump*0.9); 
             player.jumps++; input.jLock=true; playTone(330,'square',0.1); 
+            
+            // TRIPLE JUMP VFX
+            if(player.jumps === 3) {
+                 for(let k=0; k<12; k++) {
+                     particles.push({
+                         x: player.x + player.w/2, 
+                         y: player.y + player.h,
+                         dx: (Math.random()-0.5) * 12,
+                         dy: (Math.random() * 8) + 2,
+                         life: 20,
+                         c: '#00E676' // Green energy
+                     });
+                 }
+                 playTone(600, 'square', 0.15); // Higher pitch for triple jump
+            }
         }
     }
     if(!input.j) input.jLock = false;
@@ -338,11 +350,8 @@ function update() {
 
     player.ground = false;
     
-    // --- COLLISION LOGIC ---
     blocks.forEach(b => {
-        // If in pipe, IGNORE collisions to prevent sticking
         if(player.inPipe) return; 
-
         if(colCheck(player, b)) {
             if(player.dy >= 0 && player.y+player.h-player.dy <= b.y+25) { player.y = b.y-player.h; player.dy=0; player.ground=true; player.jumps=0; }
             else if(player.dy < 0 && player.y-player.dy >= b.y+b.h-20) { player.y = b.y+b.h; player.dy=0; spawnItem(b); }
@@ -352,15 +361,14 @@ function update() {
     });
 
     if(player.inPipe) {
-        // Force move down to exit level
         player.x += (goal.cx - player.x - player.w/2) * 0.2; 
-        player.y += 5; // Fast descent
-        if(player.w>0) player.w -= 0.2; // Shrink effect
+        player.y += 5; 
+        if(player.w>0) player.w -= 0.2;
         if(player.y > canvas.height + 50) { level++; initLevel(level); }
         draw(); requestAnimationFrame(update); return;
     }
 
-    // BOSS
+    // BOSS LOGIC
     if(boss && !boss.dead) {
         if(boss.x < player.x + 800) {
             document.getElementById('boss-ui').style.display = 'block';
@@ -382,7 +390,10 @@ function update() {
                 if(player.kart) { boss.hp = 0; boss.dead = true; score += 5000; spawnExplosion(boss.x, boss.y); }
                 else if(player.dy > 0 && player.y + player.h < boss.y + boss.h * 0.6) {
                     if(boss.iframes <= 0) {
-                        boss.hp--; boss.iframes = 60; player.dy = -10; spawnExplosion(boss.x+boss.w/2, boss.y);
+                        boss.hp--; 
+                        // CRITICAL CHANGE: Minimal invulnerability (10 frames) to allow rapid bounces
+                        boss.iframes = 10; 
+                        player.dy = -10; spawnExplosion(boss.x+boss.w/2, boss.y);
                         playTone(150, 'square', 0.3);
                         if(boss.hp <= 0) { boss.dead = true; score += 3000; playTone(50, 'noise', 0.8); }
                     }
@@ -400,9 +411,9 @@ function update() {
         if(colCheck(player, it)) {
             items.splice(i,1); 
             if(it.type===0) score+=100; 
-            else if(it.type===1) { // MUSHROOM
+            else if(it.type===1) { 
                 player.hp++; 
-                if(player.hp > 1) { player.w=40; player.h=56; } // Cap physical size
+                if(player.hp > 1) { player.w=40; player.h=56; }
                 score += 1000;
                 playTone(200,'square',0.3); 
                 spawnExplosion(player.x, player.y);
@@ -429,10 +440,7 @@ function update() {
     });
 
     if(goal && player.ground && Math.abs(player.y-(goal.y-player.h))<10 && player.x>goal.x && player.x<goal.x+goal.w) {
-         if(Math.abs(player.dx)<2) {
-             player.inPipe=true; 
-             playTone(100, 'sawtooth', 0.5);
-         }
+         if(Math.abs(player.dx)<2) { player.inPipe=true; playTone(100, 'sawtooth', 0.5); }
     }
 
     draw();
@@ -444,7 +452,7 @@ function takeDamage() {
         player.hp--;
         player.invul = 60;
         playTone(150, 'sawtooth', 0.5);
-        if(player.hp === 1) { player.w=32; player.h=40; } // Shrink visually
+        if(player.hp === 1) { player.w=32; player.h=40; } 
     } else {
         gameOver();
     }
@@ -466,7 +474,6 @@ function draw() {
     ctx.fillStyle = t.bg; ctx.fillRect(0,0,canvas.width,canvas.height);
     document.getElementById('world-ui').innerText = "WORLD 1-" + (level+1);
     
-    // HP Display
     let hpText = "HP: " + player.hp;
     if(player.hp > 2) hpText += " (MAX)";
     document.getElementById('hp-ui').innerText = hpText;
@@ -479,7 +486,14 @@ function draw() {
         if(b.type === 'ground') { ctx.fillStyle = t.top; ctx.fillRect(bx, b.y, b.w, 15); }
         if(b.type === 'brick') { 
             ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.fillRect(bx+5, b.y+5, b.w-10, b.h-10);
-            if(b.content) { ctx.fillStyle="#FFD700"; ctx.fillText("?", bx+20, b.y+40); }
+            if(b.content) { 
+                // Enhanced Question Mark
+                ctx.fillStyle="#FFD700"; 
+                ctx.font = "900 32px 'Arial Black', sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("?", bx+30, b.y+42);
+                ctx.textAlign = "start"; // Reset
+            }
         }
         if(b.type === 'pipe') {
              ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.fillRect(bx+5, b.y, 10, b.h);
@@ -495,15 +509,10 @@ function draw() {
             ctx.fillStyle="#FFD700"; ctx.beginPath(); ctx.ellipse(ix+15,it.y+15, 12*rot, 12, 0, 0, 6.28); ctx.fill();
             ctx.fillStyle="#FFF"; ctx.fillText("$", ix+10, it.y+22);
         }
-        else if(it.type===1) { // REAL MUSHROOM VISUALS
-             // Stem
+        else if(it.type===1) { 
              ctx.fillStyle = "#FFE0B2"; ctx.fillRect(ix+10, it.y+15, 10, 15);
-             // Cap (Red)
-             ctx.fillStyle = "#D50000"; 
-             ctx.beginPath(); ctx.arc(ix+15, it.y+15, 15, Math.PI, 0); ctx.fill();
-             // Spots (White)
-             ctx.fillStyle = "#fff"; 
-             ctx.beginPath(); ctx.arc(ix+10, it.y+10, 3, 0, Math.PI*2); ctx.fill();
+             ctx.fillStyle = "#D50000"; ctx.beginPath(); ctx.arc(ix+15, it.y+15, 15, Math.PI, 0); ctx.fill();
+             ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(ix+10, it.y+10, 3, 0, Math.PI*2); ctx.fill();
              ctx.beginPath(); ctx.arc(ix+20, it.y+8, 4, 0, Math.PI*2); ctx.fill();
              ctx.beginPath(); ctx.arc(ix+5, it.y+15, 2, 0, Math.PI*2); ctx.fill();
         }
@@ -577,7 +586,6 @@ function draw() {
              ctx.fillStyle="#FFEB3B"; ctx.fillRect(px+player.w-5, py+18, 5, 5);
         } else {
              let dir = player.facing;
-             // Color logic: HP>2 = Gold/Power
              let hatC = player.hp>2 ? "#FFD700" : "#b71c1c";
              let suitC = player.hp>2 ? "#FFF" : "#0D47A1";
              
