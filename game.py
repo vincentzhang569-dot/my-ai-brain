@@ -7,29 +7,29 @@ import json
 
 # --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="Super AI Kart: Triple Jump Edition",
+    page_title="Super AI Kart: Infinite Sound",
     page_icon="🍄",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. 音频数据 ---
+# --- 2. 音频数据处理 (带容错) ---
 def get_audio_data(folder_path="mp3"):
     playlist = []
     game_over_data = ""
     level1_data = ""
-    if not os.path.exists(folder_path):
-        return "[]", "", ""
-    all_files = glob.glob(os.path.join(folder_path, "*.mp3"))
-    for file_path in all_files:
-        filename = os.path.basename(file_path).lower()
-        try:
-            with open(file_path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-                if "game_over.mp3" == filename: game_over_data = b64
-                elif "bgm.mp3" == filename: level1_data = b64; playlist.append(b64)
-                else: playlist.append(b64)
-        except: pass
+    # 即使文件夹不存在，也返回空，让前端JS去处理兜底逻辑
+    if os.path.exists(folder_path):
+        all_files = glob.glob(os.path.join(folder_path, "*.mp3"))
+        for file_path in all_files:
+            filename = os.path.basename(file_path).lower()
+            try:
+                with open(file_path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode()
+                    if "game_over.mp3" == filename: game_over_data = b64
+                    elif "bgm.mp3" == filename: level1_data = b64; playlist.append(b64)
+                    else: playlist.append(b64)
+            except: pass
     return json.dumps(playlist), game_over_data, level1_data
 
 playlist_json, game_over_b64, level1_b64 = get_audio_data("mp3")
@@ -84,31 +84,112 @@ window.addEventListener('resize',resizeCanvas); resizeCanvas();
 
 const bgmPlaylist=__PLAYLIST_DATA__, gameOverB64="__GAMEOVER_DATA__", level1B64="__LEVEL1_DATA__";
 let audioCtx=null, currentSource=null;
+let proceduralInterval = null; // 用于AI合成音乐的定时器
+
+// --- 🎵 AI 音乐合成器 (当没有MP3时触发) ---
+function startProceduralBGM() {
+    if(proceduralInterval) clearInterval(proceduralInterval);
+    if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    
+    let tick = 0;
+    const bassLine = [110, 110, 146.83, 146.83, 130.81, 130.81, 98, 98]; // A2, D3, C3, G2
+    const melody = [440, 0, 523.25, 659.25, 587.33, 0, 440, 392]; // A4, C5, E5, D5...
+    
+    proceduralInterval = setInterval(() => {
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        const t = audioCtx.currentTime;
+        
+        // 1. Bass (贝斯)
+        let bassNote = bassLine[Math.floor(tick/4) % bassLine.length];
+        if (tick % 2 === 0) { // 每两拍响一次
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = 'square'; // 8-bit 风格
+            o.frequency.value = bassNote;
+            g.gain.setValueAtTime(0.1, t);
+            g.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+            o.connect(g); g.connect(audioCtx.destination);
+            o.start(t); o.stop(t + 0.2);
+        }
+
+        // 2. Melody (主旋律 - 随机一点)
+        if (Math.random() > 0.3) {
+            const o2 = audioCtx.createOscillator();
+            const g2 = audioCtx.createGain();
+            o2.type = 'triangle';
+            // 简单的 C 大调五声音阶
+            const scale = [523.25, 587.33, 659.25, 783.99, 880.00]; 
+            let note = scale[Math.floor(Math.random() * scale.length)];
+            // 偶尔升八度
+            if(Math.random() > 0.8) note *= 2;
+            
+            o2.frequency.setValueAtTime(note, t);
+            g2.gain.setValueAtTime(0.05, t);
+            g2.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+            o2.connect(g2); g2.connect(audioCtx.destination);
+            o2.start(t); o2.stop(t + 0.15);
+        }
+        
+        tick++;
+    }, 150); // 速度 BPM
+}
+
+function stopMusic() {
+    if(currentSource){try{currentSource.stop();}catch(e){}currentSource=null;}
+    if(proceduralInterval) { clearInterval(proceduralInterval); proceduralInterval = null; }
+}
 
 async function playMusic(t,l){
     try {
         if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
         if(audioCtx.state==='suspended') await audioCtx.resume();
-        if(currentSource){try{currentSource.stop();}catch(e){}currentSource=null;}
+        stopMusic();
+
         let b="",loop=true,vol=0.3;
-        if(t==='gameover'){b=gameOverB64;loop=false;vol=0.5;}
-        else{if(l===1&&level1B64)b=level1B64;else if(bgmPlaylist.length>0)b=bgmPlaylist[Math.floor(Math.random()*bgmPlaylist.length)];}
-        if(!b)return;
+        // 如果是 Game Over，还是尝试加载数据，如果没有数据则用合成音
+        if(t==='gameover'){
+            if (gameOverB64) { b=gameOverB64; loop=false; vol=0.5; }
+            else { 
+                // 简单的失败音效
+                const o=audioCtx.createOscillator();const g=audioCtx.createGain();
+                o.frequency.setValueAtTime(150, audioCtx.currentTime);
+                o.frequency.linearRampToValueAtTime(50, audioCtx.currentTime+1);
+                g.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                g.gain.linearRampToValueAtTime(0, audioCtx.currentTime+1);
+                o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+1);
+                return;
+            }
+        }
+        else{
+            if(l===1&&level1B64) b=level1B64;
+            else if(bgmPlaylist.length>0) b=bgmPlaylist[Math.floor(Math.random()*bgmPlaylist.length)];
+        }
+        
+        // --- 核心逻辑：如果有文件数据，播放文件；否则启动 AI 合成 ---
+        if(!b || b === "[]" || b.length < 100) {
+            console.log("No BGM data found, starting AI synthesizer...");
+            startProceduralBGM();
+            return;
+        }
+
         const bin=window.atob(b),bytes=new Uint8Array(bin.length);
         for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
         const buf=await audioCtx.decodeAudioData(bytes.buffer);
         const src=audioCtx.createBufferSource();
         src.buffer=buf;src.loop=loop;const g=audioCtx.createGain();g.gain.value=vol;
         src.connect(g);g.connect(audioCtx.destination);src.start(0);currentSource=src;
-    } catch(e){}
+    } catch(e){
+        console.warn("Audio load failed, fallback to synth:", e);
+        startProceduralBGM(); // 失败也回退到合成音
+    }
 }
+
 function playSound(t){
     try {
         if(!audioCtx)return;
         const o=audioCtx.createOscillator(),g=audioCtx.createGain();
         o.connect(g);g.connect(audioCtx.destination);const n=audioCtx.currentTime;
         if(t==='jump'){
-            // 不同段跳跃音调不同
             let freq = 150 + (player.jumpCount * 100); 
             o.frequency.setValueAtTime(freq,n);o.frequency.linearRampToValueAtTime(freq+150,n+0.1);g.gain.setValueAtTime(0.1,n);g.gain.linearRampToValueAtTime(0,n+0.1);
         }
@@ -143,10 +224,9 @@ function drawPlayer(x,y,w,h,dir){
         ctx.fillStyle="#5c3317";
         let legOffset = 0;
         if (Math.abs(player.dx) > 0.1 && player.grounded) { legOffset = Math.sin(frames * 0.4) * 8; }
-        // 三段跳时的视觉特效：如果跳跃次数>=2，脚看起来像在喷气
         if (!player.grounded && player.jumpCount >= 2) {
-            ctx.fillStyle = "#FFD700"; // 金脚
-            ctx.fillRect(x+w/2-5, y+h, 10, Math.random()*10); // 喷气粒子
+            ctx.fillStyle = "#FFD700"; 
+            ctx.fillRect(x+w/2-5, y+h, 10, Math.random()*10); 
             ctx.fillStyle="#5c3317"; 
         }
         ctx.fillRect(x + 4 + legOffset, y + h - 8, 12, 8); 
@@ -212,7 +292,6 @@ function createLevel(lvl) {
         let r=Math.random();
         
         if(r < 0.20 && lvl > 0){ 
-            // 修复：大幅减少坑的宽度 (原来是 120-170，现在是 80-120)
             x += 80 + Math.random()*40; 
         } 
         else {
@@ -280,18 +359,15 @@ function update() {
     let speed = player.inKart ? 10 : 6;
     if(input.right){player.dx=speed;player.facingRight=true;}else if(input.left){player.dx=-speed;player.facingRight=false;}else player.dx=0;
     
-    // --- 核心修复：三段跳逻辑 ---
     if(input.jump){
         if(player.grounded){
-            // 第一跳
             player.dy=player.inKart?-18:-16;
             player.grounded=false;
             player.jumpCount=1;
             playSound('jump');
             input.jump=false;
         }
-        else if(player.jumpCount < 3){ // 现在允许跳到第3次
-            // 空中跳跃力度稍小，方便控制
+        else if(player.jumpCount < 3){ 
             player.dy=player.inKart?-16:-13; 
             player.jumpCount++;
             playSound('jump');
@@ -354,7 +430,7 @@ function update() {
             if(player.x<e.x+e.w&&player.x+player.w>e.x&&player.y<e.y+e.h&&player.y+player.h>e.y){
                 if (e.type === 'spiky' && !player.inKart) { takeDamage(); } 
                 else if(player.dy>0 && player.y+player.h < e.y+e.h*0.8){
-                    e.dead=true;player.dy=-8;state.score+=100;playSound('stomp');player.jumpCount=1; // 踩怪后重置一部分跳跃
+                    e.dead=true;player.dy=-8;state.score+=100;playSound('stomp');player.jumpCount=1; 
                 } else { takeDamage(); }
             }
         }
@@ -403,6 +479,7 @@ function drawBlocks() {
 function die(){
     if(player.dead)return;
     player.dead=true;
+    stopMusic();
     cancelAnimationFrame(loopId);
     playMusic('gameover');
     document.getElementById('title-text').innerHTML="GAME OVER";
@@ -444,5 +521,5 @@ const at=(id,k)=>{const el=document.getElementById(id);el.addEventListener('touc
 """
 
 game_html = game_template.replace("__PLAYLIST_DATA__", playlist_json).replace("__GAMEOVER_DATA__", game_over_b64).replace("__LEVEL1_DATA__", level1_b64)
-st.markdown("### 🍄 Super AI Kart: Triple Jump Edition (v17.0)")
+st.markdown("### 🍄 Super AI Kart: Infinite Sound Edition")
 components.html(game_html, height=600, scrolling=False)
