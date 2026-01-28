@@ -123,6 +123,11 @@ function playSound(t){
 const BIOMES={grass:{bg:'#5c94fc',ground:'#51D96C',monsters:['walker','slime','rabbit']}, dark:{bg:'#222',ground:'#555',monsters:['walker','bat','spiky']}, sky:{bg:'#87CEEB',ground:'#FFF',monsters:['bird','bat']}};
 let state={level:1,score:0,coins:0}, frames=0, blocks=[], enemies=[], items=[], clouds=[], camX=0, finishLine=0, loopId=null, input={left:false,right:false,jump:false};
 let player={x:100,y:200,w:40,h:56,dx:0,dy:0,grounded:false,jumpCount:0,dead:false,facingRight:true,enteringPipe:false, isBig:false, inKart:false, immune:0};
+let boss=null, floatTexts=[];
+
+function pushFloatText(x, y, t, life=45, c="#FFD700", dx=0, dy=-1.2){
+    floatTexts.push({x,y,t,life,maxLife:life,c,dx,dy});
+}
 
 function drawPlayer(x,y,w,h,dir){
     if(player.enteringPipe) ctx.globalAlpha = 0.7;
@@ -254,6 +259,23 @@ function createLevel(lvl) {
     blocks.push({x:finishLine+200,y:gy-100,w:60,h:50,type:'pipe_top',c:'#00DD00'});
     
     player.x=100; player.y=gy-200; player.dx=0; player.dy=0; player.dead=false; player.jumpCount=0; camX=0;
+    boss = {
+        x: finishLine - 220,
+        y: gy - 110,
+        w: 110,
+        h: 110,
+        dx: 0,
+        dy: 0,
+        grounded: false,
+        hp: 2,
+        maxHp: 2,
+        dead: false,
+        color: (lvl % 3 === 0) ? "#B71C1C" : (lvl % 3 === 1) ? "#4A148C" : "#FFD700",
+        timer: 0,
+        action: "chase",
+        pauseTimer: 0
+    };
+    floatTexts = [];
 }
 
 function update() {
@@ -309,6 +331,11 @@ function update() {
     blocks.forEach(b=>{
         if(player.x<b.x+b.w&&player.x+player.w>b.x&&player.y<b.y+b.h&&player.y+player.h>b.y){
             if (b.type === 'pipe_top' && player.dy > 0 && player.y+player.h <= b.y+20 && Math.abs(player.x+player.w/2 - (b.x+b.w/2)) < 20) {
+                if(boss && !boss.dead){
+                    pushFloatText(player.x, player.y-30, "DEFEAT BOSS!", 55, "#FF4500");
+                    player.dy = -6;
+                    return;
+                }
                 player.enteringPipe = true; playSound('pipe'); return;
             }
             if(player.dy>0&&player.y+player.h-player.dy<=b.y+20){
@@ -319,7 +346,7 @@ function update() {
                 if(b.type==='box' && b.active) {
                     b.active=false; b.c='#CD853F'; 
                     let itemType = b.loot;
-                    if(itemType==='coin') { state.coins++; state.score+=50; playSound('coin'); } 
+                    if(itemType==='coin') { state.coins++; state.score+=50; playSound('coin'); pushFloatText(b.x+10, b.y-20, "🪙", 40, "#FFD700"); } 
                     else { items.push({x:b.x+10, y:b.y-40, w:30, h:30, type:itemType, dx:2, dy:-5, ground:false}); playSound('powerup'); }
                 }
             }
@@ -360,9 +387,112 @@ function update() {
         }
     });
 
+    if(boss && !boss.dead){
+        boss.timer++;
+        boss.dy += 0.7;
+        let dist = (player.x + player.w/2) - (boss.x + boss.w/2);
+        if(boss.action === "chase"){
+            if(boss.timer % 180 === 0 && boss.timer > 0){
+                boss.action = "ground_pause";
+                boss.pauseTimer = 0;
+                boss.dx = 0;
+            } else {
+                let targetSpd = 2.2;
+                boss.dx += (dist > 0 ? 0.2 : -0.2);
+                if(boss.dx > targetSpd) boss.dx = targetSpd;
+                if(boss.dx < -targetSpd) boss.dx = -targetSpd;
+            }
+        } else if(boss.action === "ground_pause"){
+            boss.pauseTimer++;
+            boss.dx = 0;
+            if(boss.pauseTimer > 60){
+                boss.action = "chase";
+                boss.timer = 0;
+            }
+        }
+
+        boss.x += boss.dx;
+        boss.y += boss.dy;
+
+        blocks.forEach(b=>{
+            if(boss.x<b.x+b.w&&boss.x+boss.w>b.x&&boss.y<b.y+b.h&&boss.y+boss.h>b.y){
+                if(boss.dy>0&&boss.y+boss.h-boss.dy<=b.y+20){
+                    boss.y=b.y-boss.h;boss.dy=0;boss.grounded=true;
+                } else if(boss.dy<0 && boss.y-boss.dy >= b.y+b.h-20) {
+                    boss.y = b.y+b.h; boss.dy=0;
+                } else {
+                    boss.x -= boss.dx; boss.dx *= -0.5;
+                }
+            }
+        });
+
+        if(player.x<boss.x+boss.w&&player.x+player.w>boss.x&&player.y<boss.y+boss.h&&player.y+player.h>boss.y){
+            let stomp = (player.dy > 0 && (player.y + player.h) - player.dy <= boss.y + 25);
+            if(stomp){
+                boss.hp -= 1;
+                player.dy = -12;
+                player.jumpCount = 1;
+                playSound('stomp');
+                pushFloatText(boss.x + boss.w/2 - 10, boss.y - 25, "-1", 35, "#FF4500");
+                if(boss.hp > 0){
+                    pushFloatText(boss.x + boss.w/2 - 60, boss.y - 55, `LEFT: ${boss.hp}`, 45, "#FFFFFF");
+                } else {
+                    boss.dead = true;
+                    state.score += 1500;
+                    pushFloatText(boss.x + boss.w/2 - 70, boss.y - 60, "BOSS DOWN!", 80, "#00FF00");
+                }
+            } else {
+                takeDamage();
+            }
+        }
+    }
+
     drawItemsAndEnemies();
+    if(boss && !boss.dead && boss.x-camX>-200 && boss.x-camX<canvas.width+200){
+        let bx = boss.x - camX, by = boss.y;
+        ctx.fillStyle = boss.color;
+        ctx.fillRect(bx, by, boss.w, boss.h);
+        ctx.fillStyle = "rgba(0,0,0,0.25)";
+        ctx.fillRect(bx, by + boss.h*0.6, boss.w, boss.h*0.4);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(bx + 18, by + 18, 12, 12);
+        ctx.fillRect(bx + boss.w - 30, by + 18, 12, 12);
+    }
     drawPlayer(player.x-camX,player.y,player.w,player.h,player.facingRight);
     drawBlocks();
+
+    if(boss && !boss.dead){
+        let bw = 260, bh = 16;
+        let bx = canvas.width/2 - bw/2, by = 18;
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillRect(bx-4, by-4, bw+8, bh+26);
+        ctx.fillStyle = "#fff";
+        ctx.font = "18px VT323, monospace";
+        ctx.fillText(`BOSS HP ${boss.hp}/${boss.maxHp}`, bx, by+16);
+        ctx.fillStyle = "#444";
+        ctx.fillRect(bx, by+22, bw, bh);
+        ctx.fillStyle = "#FF4500";
+        ctx.fillRect(bx, by+22, bw * (boss.hp / boss.maxHp), bh);
+    } else if(boss && boss.dead){
+        ctx.fillStyle = "rgba(0,0,0,0.25)";
+        ctx.fillRect(canvas.width/2 - 140, 18, 280, 34);
+        ctx.fillStyle = "#00FF00";
+        ctx.font = "24px VT323, monospace";
+        ctx.fillText("EXIT OPEN", canvas.width/2 - 55, 42);
+    }
+
+    floatTexts.forEach(f=>{
+        f.x += f.dx;
+        f.y += f.dy;
+        f.life--;
+        let a = Math.max(0, f.life / f.maxLife);
+        ctx.globalAlpha = a;
+        ctx.fillStyle = f.c;
+        ctx.font = "28px VT323, monospace";
+        ctx.fillText(f.t, f.x - camX, f.y);
+        ctx.globalAlpha = 1;
+    });
+    floatTexts = floatTexts.filter(f=>f.life>0);
     
     document.getElementById('score-val').innerText=state.score;
     document.getElementById('coin-val').innerText=state.coins;
@@ -437,7 +567,16 @@ window.retryLevel=function(){
     }
 }
 
-window.addEventListener('keydown',e=>{if(e.code==='ArrowRight')input.right=true;if(e.code==='ArrowLeft')input.left=true;if((e.code==='Space'||e.code==='ArrowUp')&&!e.repeat)input.jump=true;});
+window.addEventListener('keydown',e=>{
+    if(player.dead && (e.code==='Space' || e.code==='Enter') && !e.repeat){
+        e.preventDefault();
+        retryLevel();
+        return;
+    }
+    if(e.code==='ArrowRight')input.right=true;
+    if(e.code==='ArrowLeft')input.left=true;
+    if((e.code==='Space'||e.code==='ArrowUp')&&!e.repeat)input.jump=true;
+});
 window.addEventListener('keyup',e=>{if(e.code==='ArrowRight')input.right=false;if(e.code==='ArrowLeft')input.left=false;if(e.code==='Space'||e.code==='ArrowUp')input.jump=false;});
 const at=(id,k)=>{const el=document.getElementById(id);el.addEventListener('touchstart',e=>{e.preventDefault();input[k]=true;});el.addEventListener('touchend',e=>{e.preventDefault();if(k!=='jump')input[k]=false;});};at('btn-left','left');at('btn-right','right');at('btn-jump','jump');
 </script></body></html>
