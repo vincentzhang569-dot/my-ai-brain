@@ -1,6 +1,10 @@
 from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
+import base64
+import os
+import glob
+import json
 
 st.set_page_config(page_title="Super AI Kart: Physics + Level Enhanced", page_icon="🍄", layout="wide", initial_sidebar_state="collapsed")
 
@@ -18,13 +22,48 @@ st.markdown(
 src_path = Path("d:/my-ai-brain/game.py")
 content = src_path.read_text(encoding="utf-8")
 
-start_idx = content.find('game_html = """')
+def get_audio_data(folder_path="mp3"):
+    playlist = []
+    game_over_data = ""
+    level1_data = ""
+    if not os.path.exists(folder_path):
+        return "[]", "", ""
+    all_files = glob.glob(os.path.join(folder_path, "*.mp3"))
+    for file_path in all_files:
+        filename = os.path.basename(file_path).lower()
+        try:
+            with open(file_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+                if "game_over.mp3" == filename:
+                    game_over_data = b64
+                elif "bgm.mp3" == filename:
+                    level1_data = b64
+                    playlist.append(b64)
+                else:
+                    playlist.append(b64)
+        except:
+            pass
+    return json.dumps(playlist), game_over_data, level1_data
+
+playlist_json, game_over_b64, level1_b64 = get_audio_data("mp3")
+
+base_html = ""
+start_idx = content.find('game_template = """')
 if start_idx != -1:
-    start_idx += len('game_html = """')
+    start_idx += len('game_template = """')
     end_idx = content.find('"""', start_idx)
-    base_html = content[start_idx:end_idx]
+    base_template = content[start_idx:end_idx]
+    base_html = (
+        base_template.replace("__PLAYLIST_DATA__", playlist_json)
+        .replace("__GAMEOVER_DATA__", game_over_b64)
+        .replace("__LEVEL1_DATA__", level1_b64)
+    )
 else:
-    base_html = ""
+    start_idx = content.find('game_html = """')
+    if start_idx != -1:
+        start_idx += len('game_html = """')
+        end_idx = content.find('"""', start_idx)
+        base_html = content[start_idx:end_idx]
 
 # AI Configuration (Tunable Constants)
 ai_constants = {
@@ -36,7 +75,6 @@ ai_constants = {
     "chaseSpeedBase": 1.8,
     "chaseSpeedMax": 2.5
 }
-import json
 ai_const_json = json.dumps(ai_constants)
 
 patch_js = """
