@@ -19,7 +19,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-src_path = Path("d:/my-ai-brain/game.py")
+src_path = Path(__file__).resolve().parent / "game.py"
+
 content = src_path.read_text(encoding="utf-8")
 
 def get_audio_data(folder_path="mp3"):
