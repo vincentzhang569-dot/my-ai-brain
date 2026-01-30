@@ -13,24 +13,16 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. 音频数据 ---
+# --- 2. 音频数据（云端安全模式：不再内嵌 mp3，避免页面过大） ---
 def get_audio_data(folder_path="mp3"):
-    playlist = []
-    game_over_data = ""
-    level1_data = ""
-    if not os.path.exists(folder_path):
-        return "[]", "", ""
-    all_files = glob.glob(os.path.join(folder_path, "*.mp3"))
-    for file_path in all_files:
-        filename = os.path.basename(file_path).lower()
-        try:
-            with open(file_path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-                if "game_over.mp3" == filename: game_over_data = b64
-                elif "bgm.mp3" == filename: level1_data = b64; playlist.append(b64)
-                else: playlist.append(b64)
-        except: pass
-    return json.dumps(playlist), game_over_data, level1_data
+    """
+    为了避免在 Streamlit Cloud / GitHub 部署时页面体积过大，
+    这里不再把 mp3 文件编码进 HTML，只返回占位数据。
+
+    - BGM 与 Game Over 音效改为「关闭」，游戏仍然可玩
+    - 如需重新启用，可改回读取 mp3 的实现
+    """
+    return "[]", "", ""
 
 playlist_json, game_over_b64, level1_b64 = get_audio_data("mp3")
 
@@ -91,8 +83,13 @@ async function playMusic(t,l){
         if(audioCtx.state==='suspended') await audioCtx.resume();
         if(currentSource){try{currentSource.stop();}catch(e){}currentSource=null;}
         let b="",loop=true,vol=0.3;
-        if(t==='gameover'){b=gameOverB64;loop=false;vol=0.5;}
-        else{if(l===1&&level1B64)b=level1B64;else if(bgmPlaylist.length>0)b=bgmPlaylist[Math.floor(Math.random()*bgmPlaylist.length)];}
+        if(t==='gameover'){
+            b=gameOverB64;loop=false;vol=0.5;
+        } else {
+            // 始终使用主 BGM，避免因为空播放列表导致没有背景音乐
+            if(level1B64) b=level1B64;
+            else if(bgmPlaylist.length>0) b=bgmPlaylist[Math.floor(Math.random()*bgmPlaylist.length)];
+        }
         if(!b)return;
         const bin=window.atob(b),bytes=new Uint8Array(bin.length);
         for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
@@ -121,6 +118,7 @@ function playSound(t){
 }
 
 const BIOMES={grass:{bg:'#5c94fc',ground:'#51D96C',monsters:['walker','slime','rabbit']}, dark:{bg:'#222',ground:'#555',monsters:['walker','bat','spiky']}, sky:{bg:'#87CEEB',ground:'#FFF',monsters:['bird','bat']}};
+let coinFx=[];
 let state={level:1,score:0,coins:0}, frames=0, blocks=[], enemies=[], items=[], clouds=[], camX=0, finishLine=0, loopId=null, input={left:false,right:false,jump:false};
 let player={x:100,y:200,w:40,h:56,dx:0,dy:0,grounded:false,jumpCount:0,dead:false,facingRight:true,enteringPipe:false, isBig:false, inKart:false, immune:0};
 let boss=null, floatTexts=[];
